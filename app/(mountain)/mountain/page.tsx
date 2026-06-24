@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import MountainViz from "@/components/MountainViz";
 import PlanView from "@/components/PlanView";
+import ProgressTracker from "@/components/ProgressTracker";
 
 interface MountainMilestone {
   name: string;
@@ -26,27 +27,27 @@ function MountainContent() {
   const [mountain, setMountain] = useState<MountainData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchMountain() {
-      if (id) {
-        const res = await fetch(`/api/mountains/${id}`);
-        if (res.ok) {
-          setMountain(await res.json());
-        }
-      } else {
-        const res = await fetch("/api/mountains");
-        if (res.ok) {
-          const list = await res.json();
-          if (list.length) {
-            setMountain(list[0]);
-          }
+  const fetchMountain = useCallback(async () => {
+    if (id) {
+      const res = await fetch(`/api/mountains/${id}`);
+      if (res.ok) {
+        setMountain(await res.json());
+      }
+    } else {
+      const res = await fetch("/api/mountains");
+      if (res.ok) {
+        const list = await res.json();
+        if (list.length) {
+          setMountain(list[0]);
         }
       }
-      setLoading(false);
     }
-
-    fetchMountain();
+    setLoading(false);
   }, [id]);
+
+  useEffect(() => {
+    fetchMountain();
+  }, [fetchMountain]);
 
   if (loading) {
     return (
@@ -75,6 +76,10 @@ function MountainContent() {
         currentMilestoneIndex={mountain.current_milestone_index}
       />
       <PlanView mountainId={mountain.id} />
+      <ProgressTracker
+        mountainId={mountain.id}
+        onProgressLogged={fetchMountain}
+      />
     </div>
   );
 }

@@ -1,6 +1,11 @@
 "use client";
 
-import type { Milestone } from "@/lib/mock-data";
+interface Milestone {
+  name: string;
+  description: string;
+  completed: boolean;
+  current?: boolean;
+}
 
 interface MountainVizProps {
   milestones: Milestone[];

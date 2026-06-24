@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import MountainViz from "@/components/MountainViz";
+import PlanView from "@/components/PlanView";
 
 interface MountainMilestone {
   name: string;
@@ -67,12 +68,13 @@ function MountainContent() {
   }
 
   return (
-    <div className="max-w-[960px] mx-auto mt-2">
+    <div className="max-w-[960px] mx-auto mt-2 pb-10">
       <MountainViz
         milestones={mountain.milestones}
         summit={mountain.summit}
         currentMilestoneIndex={mountain.current_milestone_index}
       />
+      <PlanView mountainId={mountain.id} />
     </div>
   );
 }

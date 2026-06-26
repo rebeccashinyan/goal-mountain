@@ -151,7 +151,7 @@ function GuideContent() {
       {/* Context Selector */}
       <div className="flex items-center gap-3 mb-4">
         <label className="text-xs font-medium text-stone-400 uppercase tracking-wide shrink-0">
-          Context
+          Mountain
         </label>
         <select
           value={selectedContext}

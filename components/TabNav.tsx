@@ -120,10 +120,14 @@ export const dashboardTabs: TabConfig[] = [
   { href: "/guide", label: "AI Guide", Icon: GuideIcon },
 ];
 
-export const mountainDetailTabs: TabConfig[] = [
+export const mountainBackTab: TabConfig[] = [
   { href: "/", label: "Mountains", Icon: MountainsIcon },
+];
+
+export const mountainContextTabs: TabConfig[] = [
   { href: "/mountain", label: "Overview", Icon: MountainIcon },
   { href: "/insights", label: "Insights", Icon: InsightsIcon },
+  { href: "/guide", label: "AI Guide", Icon: GuideIcon },
 ];
 
 export default function TabNav({ tabs }: { tabs: TabConfig[] }) {
@@ -140,7 +144,7 @@ export default function TabNav({ tabs }: { tabs: TabConfig[] }) {
           <Link
             key={tab.href}
             href={tab.href}
-            className={`flex items-center justify-center w-12 h-10 rounded-xl transition-colors duration-200 ${
+            className={`relative group flex items-center justify-center w-12 h-10 rounded-xl transition-colors duration-200 ${
               isActive ? "bg-white" : "hover:bg-stone-200/60"
             }`}
             style={
@@ -151,6 +155,9 @@ export default function TabNav({ tabs }: { tabs: TabConfig[] }) {
             aria-label={tab.label}
           >
             <tab.Icon active={isActive} />
+            <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-stone-800 px-2.5 py-1 text-[11px] font-medium text-white opacity-0 scale-95 transition-all duration-150 group-hover:opacity-100 group-hover:scale-100" style={{ boxShadow: "0 2px 6px rgba(0,0,0,0.15)" }}>
+              {tab.label}
+            </span>
           </Link>
         );
       })}

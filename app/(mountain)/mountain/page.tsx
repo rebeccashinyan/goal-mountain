@@ -78,7 +78,7 @@ function MountainContent() {
           className="text-sm px-4 py-2 rounded-xl bg-white text-stone-700 font-medium border border-stone-200 hover:bg-forest-50 hover:border-forest-300 hover:text-forest-800 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
           style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
         >
-          Ask AI Guide
+          Discuss With AI
         </Link>
       </div>
       <MountainViz

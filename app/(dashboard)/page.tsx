@@ -42,6 +42,15 @@ export default function DashboardPage() {
     fetchMountains();
   }, [fetchMountains]);
 
+  async function handleDelete(id: string, goal: string) {
+    if (!confirm(`Delete "${goal}"? This cannot be undone.`)) return;
+
+    const res = await fetch(`/api/mountains/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setMountains((prev) => prev.filter((m) => m.id !== id));
+    }
+  }
+
   return (
     <div className="max-w-[1100px] mx-auto">
       {loading ? (
@@ -78,9 +87,21 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-8">
             {mountains.map((m) => (
               <div key={m.id}>
-                <p className="text-sm text-stone-600 mb-2 pl-1 font-medium">
-                  Goal: {m.goal}
-                </p>
+                <div className="flex items-center justify-between mb-2 pl-1">
+                  <p className="text-sm text-stone-600 font-medium">
+                    Goal: {m.goal}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(m.id, m.goal)}
+                    className="p-1.5 rounded-lg text-stone-400 hover:text-summit hover:bg-red-50 active:scale-[0.92] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-summit transition-colors duration-200"
+                    aria-label={`Delete ${m.goal}`}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4m2 0v9.333a1.333 1.333 0 01-1.334 1.334H4.667a1.333 1.333 0 01-1.334-1.334V4h9.334z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
                 <Link
                   href={`/mountain?id=${m.id}`}
                   className="block rounded-2xl bg-stone-100 p-4 pb-3 transition-transform duration-200 hover:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 active:scale-[0.99]"

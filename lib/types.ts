@@ -83,7 +83,7 @@ export interface Reflection {
   week_start: string;
   user_input: {
     weekly_progress: string;
-    missed_workouts: string;
+    missed_activities: string;
     energy_level: number;
     motivation_level: number;
     obstacles: string;
@@ -120,6 +120,6 @@ export interface Memory {
 export interface UserProfile {
   behavior_patterns: string[];
   motivation_profile: string[];
-  training_history_summary: string;
+  journey_history_summary: string;
   personalized_context: string[];
 }

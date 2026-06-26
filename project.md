@@ -339,10 +339,77 @@ The project demonstrates:
 
 The core challenge is designing how an AI can guide someone through a journey that may last months or years while continuously adapting to changing circumstances.
 
+## AI Guide
+
+There is one AI Guide in the app. The AI Guide changes its context based on where the user enters from.
+
+### Context Selector
+
+At the top of the Guide page, a dropdown selects the context:
+- All Mountains — cross-mountain strategy
+- [Specific Mountain] — mountain-specific coaching
+
+**All Mountains context:**
+- What should I prioritize?
+- Am I taking on too many goals?
+- Which mountain is at risk?
+
+**Single Mountain context:**
+- What should I do next?
+- Why am I stuck?
+- How can I reach my summit faster?
+
+### Navigation Flows
+
+**Path 1:** AI Guide → Context = All Mountains
+
+**Path 2:** My Mountains → Mountain Details → Ask AI → AI Guide → Auto-select that mountain
+
+**Path 3:** Insights → Discuss With AI → AI Guide → Auto-select that mountain and pass the selected insight into the conversation
+
+The user should feel like they have one AI companion, not multiple AI chatbots. Only the AI's context changes.
+
 ## App Structure
 
-- Expeditions / My Mountains
-- Overall Analysis Page
-- Mountain Page
-- AI Guide Page
-- Insights Page
+**Main Pages**
+- My Mountains (dashboard)
+- Analysis (memory profile + stored memories)
+- AI Guide (context-aware chat)
+
+**Mountain Detail Pages**
+- Overview (mountain visualization + weekly plan + progress tracker + reflection)
+- Insights (research agent data)
+
+## Tech Stack
+
+- **Framework:** Next.js (App Router)
+- **Styling:** Tailwind CSS
+- **AI:** OpenAI API (GPT-4o-mini)
+- **Database:** Supabase (PostgreSQL)
+- **Deployment:** Vercel (planned)
+
+## Database Tables
+
+- `mountains` — goals, milestones, progress
+- `research` — Research Agent results
+- `weekly_plans` — Planning + Strategy Agent output
+- `progress_logs` — Progress Tracking Agent logs
+- `reflections` — Reflection Agent weekly reviews
+- `memory` — Memory Agent long-term storage
+
+## Recent Updates
+
+### Agent Refinement: Goal-Agnostic (2026-06-25)
+
+All agents have been updated to support any goal type (career, fitness, learning, creative, financial, personal growth), removing previous running-specific bias.
+
+**Changes:**
+- **Mountain Generator** — frontend sends `current_level`/`target_date`, mapped to existing DB columns
+- **Planning Agent** — generic prompt (no workout/soreness/injury language)
+- **Progress Tracking Agent** — generic activity types (`activity`, `completed_task`, `missed_activity`, `milestone_reached`, `rest_day`), `soreness` → `effort`
+- **Reflection Agent** — generic prompt (no missed workout patterns)
+- **Guide Agent** — generic examples, labels "Target date" in prompts
+- **Memory Agent** — `training_history_summary` → `journey_history_summary`
+- **CreateMountainModal** — "Current Level" / "Target Date" labels (generic)
+
+No DB migration needed — API routes map generic frontend names to existing DB columns (`running_level`, `race_date`).

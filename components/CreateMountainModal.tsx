@@ -15,8 +15,8 @@ export default function CreateMountainModal({
 }: CreateMountainModalProps) {
   const [goal, setGoal] = useState("");
   const [showDetails, setShowDetails] = useState(false);
-  const [runningLevel, setRunningLevel] = useState("");
-  const [raceDate, setRaceDate] = useState("");
+  const [currentLevel, setCurrentLevel] = useState("");
+  const [targetDate, setTargetDate] = useState("");
   const [constraints, setConstraints] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -28,8 +28,8 @@ export default function CreateMountainModal({
     } else {
       setGoal("");
       setShowDetails(false);
-      setRunningLevel("");
-      setRaceDate("");
+      setCurrentLevel("");
+      setTargetDate("");
       setConstraints("");
       setError("");
     }
@@ -44,8 +44,8 @@ export default function CreateMountainModal({
 
     try {
       const body: Record<string, string> = { goal: goal.trim() };
-      if (runningLevel.trim()) body.running_level = runningLevel.trim();
-      if (raceDate) body.race_date = raceDate;
+      if (currentLevel.trim()) body.current_level = currentLevel.trim();
+      if (targetDate) body.target_date = targetDate;
       if (constraints.trim()) body.constraints = constraints.trim();
 
       const res = await fetch("/api/generate-mountain", {
@@ -123,9 +123,9 @@ export default function CreateMountainModal({
                 </label>
                 <input
                   type="text"
-                  value={runningLevel}
-                  onChange={(e) => setRunningLevel(e.target.value)}
-                  placeholder="e.g. Beginner, can run 2K comfortably"
+                  value={currentLevel}
+                  onChange={(e) => setCurrentLevel(e.target.value)}
+                  placeholder="e.g. Beginner, some experience, intermediate"
                   className={inputClasses}
                   disabled={loading}
                 />
@@ -137,8 +137,8 @@ export default function CreateMountainModal({
                 </label>
                 <input
                   type="date"
-                  value={raceDate}
-                  onChange={(e) => setRaceDate(e.target.value)}
+                  value={targetDate}
+                  onChange={(e) => setTargetDate(e.target.value)}
                   className={inputClasses}
                   disabled={loading}
                 />
@@ -152,7 +152,7 @@ export default function CreateMountainModal({
                   type="text"
                   value={constraints}
                   onChange={(e) => setConstraints(e.target.value)}
-                  placeholder="e.g. Only free on weekends, have a knee injury"
+                  placeholder="e.g. Only free on weekends, limited budget"
                   className={inputClasses}
                   disabled={loading}
                 />

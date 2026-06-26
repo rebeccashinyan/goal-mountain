@@ -117,13 +117,12 @@ export type TabConfig = {
 export const dashboardTabs: TabConfig[] = [
   { href: "/", label: "Mountains", Icon: MountainsIcon },
   { href: "/analysis", label: "Analysis", Icon: AnalysisIcon },
-  { href: "/settings", label: "Settings", Icon: SettingsIcon },
+  { href: "/guide", label: "AI Guide", Icon: GuideIcon },
 ];
 
 export const mountainDetailTabs: TabConfig[] = [
   { href: "/", label: "Mountains", Icon: MountainsIcon },
-  { href: "/mountain", label: "Mountain", Icon: MountainIcon },
-  { href: "/guide", label: "Guide", Icon: GuideIcon },
+  { href: "/mountain", label: "Overview", Icon: MountainIcon },
   { href: "/insights", label: "Insights", Icon: InsightsIcon },
 ];
 

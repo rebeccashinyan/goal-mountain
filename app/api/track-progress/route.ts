@@ -44,10 +44,10 @@ export async function POST(request: Request) {
     messages: [
       {
         role: "system",
-        content: `You are the Progress Tracking Agent for Goal Mountain. You track the user's progress toward their summit.
+        content: `You are the Progress Tracking Agent for Goal Mountain. You track the user's progress toward their summit for any type of goal.
 
 Your job:
-- Analyze workout logs, completed tasks, and activity data
+- Analyze activity logs, completed tasks, and progress data
 - Calculate progress percentage toward the summit
 - Check if any milestones should be marked as completed
 - Detect trends (improving, maintaining, declining)
@@ -73,7 +73,8 @@ Rules:
 - A missed day is not a crisis — look at weekly patterns
 - Progress should reflect actual achievement, not just activity
 - If multiple milestones are now complete, mark them all
-- Risk signals should be actionable, not anxiety-inducing`,
+- Risk signals should be actionable, not anxiety-inducing
+- Adapt your analysis to the goal type — a career goal, a fitness goal, and a learning goal have different progress signals`,
       },
       {
         role: "user",
@@ -82,7 +83,7 @@ Summit: ${mountain.summit}
 Milestones: ${JSON.stringify(mountain.milestones)}
 Current milestone index: ${mountain.current_milestone_index}
 Current progress: ${mountain.progress}%
-Race date: ${mountain.race_date || "Not set"}
+Target date: ${mountain.race_date || "Not set"}
 
 New log entry:
 Type: ${log_type}

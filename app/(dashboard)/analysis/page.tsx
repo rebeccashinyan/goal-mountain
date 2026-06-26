@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 interface UserProfile {
   behavior_patterns: string[];
   motivation_profile: string[];
-  training_history_summary: string;
+  journey_history_summary: string;
   personalized_context: string[];
 }
 
@@ -241,7 +241,7 @@ export default function AnalysisPage() {
                 Journey So Far
               </p>
               <p className="text-sm text-stone-700 leading-relaxed">
-                {profile.training_history_summary}
+                {profile.journey_history_summary}
               </p>
             </div>
 

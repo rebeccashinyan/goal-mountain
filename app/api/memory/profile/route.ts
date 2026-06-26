@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     return Response.json({
       behavior_patterns: [],
       motivation_profile: [],
-      training_history_summary: "No data yet — start logging progress to build your profile.",
+      journey_history_summary: "No data yet — start logging progress to build your profile.",
       personalized_context: [],
     });
   }
@@ -49,14 +49,15 @@ Return a JSON object:
 {
   "behavior_patterns": ["pattern 1", "pattern 2"],
   "motivation_profile": ["what motivates this user", "what demotivates them"],
-  "training_history_summary": "brief summary of their journey so far",
+  "journey_history_summary": "brief summary of their journey so far",
   "personalized_context": ["context item that other agents should know"]
 }
 
 Rules:
 - Synthesize, don't just list — find patterns across memories
 - Focus on actionable insights that help planning and reflection
-- Be specific: "Performs best with morning workouts on weekdays" not "Likes mornings"`,
+- Be specific: "Performs best with focused morning sessions on weekdays" not "Likes mornings"
+- Adapt your analysis to the goal type — fitness, career, learning, creative goals all have different behavioral patterns`,
       },
       {
         role: "user",

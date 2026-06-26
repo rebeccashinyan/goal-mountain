@@ -42,7 +42,7 @@ export default function ReflectionView({
   const [showForm, setShowForm] = useState(false);
 
   const [weeklyProgress, setWeeklyProgress] = useState("");
-  const [missedWorkouts, setMissedWorkouts] = useState("");
+  const [missedActivities, setMissedWorkouts] = useState("");
   const [obstacles, setObstacles] = useState("");
   const [feedback, setFeedback] = useState("");
   const [energyLevel, setEnergyLevel] = useState(3);
@@ -85,7 +85,7 @@ export default function ReflectionView({
         mountain_id: mountainId,
         user_input: {
           weekly_progress: weeklyProgress,
-          missed_workouts: missedWorkouts,
+          missed_activities: missedActivities,
           energy_level: energyLevel,
           motivation_level: motivationLevel,
           obstacles,
@@ -165,9 +165,9 @@ export default function ReflectionView({
             </label>
             <input
               type="text"
-              value={missedWorkouts}
+              value={missedActivities}
               onChange={(e) => setMissedWorkouts(e.target.value)}
-              placeholder="e.g. Skipped Tuesday and Thursday runs"
+              placeholder="e.g. Skipped Tuesday study session, missed networking event"
               className={inputClasses}
             />
           </div>

@@ -2,7 +2,7 @@ import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
-  const { goal, running_level, race_date, constraints } = await request.json();
+  const { goal, current_level, target_date, constraints } = await request.json();
 
   if (!goal || typeof goal !== "string" || goal.trim().length === 0) {
     return Response.json({ error: "Goal is required" }, { status: 400 });
@@ -14,8 +14,8 @@ export async function POST(request: Request) {
     .in("category", ["goal", "preference", "behavior_pattern", "motivation"]);
 
   const userContext = [
-    running_level && `Current running level: ${running_level}`,
-    race_date && `Target race date: ${race_date}`,
+    current_level && `Current level: ${current_level}`,
+    target_date && `Target date: ${target_date}`,
     constraints && `User constraints: ${constraints}`,
     memories?.length &&
       `Known user context from past goals: ${memories.map((m: { content: string }) => m.content).join("; ")}`,
@@ -55,8 +55,9 @@ Rules:
 - The last milestone should lead directly to the summit
 - Make milestones specific and actionable, not vague
 - Set a clear summit success condition
-- If user context is provided (running level, race date, constraints), adapt the mountain accordingly
-- Adapt the number and detail of milestones to the goal's complexity`,
+- If user context is provided (current level, target date, constraints), adapt the mountain accordingly
+- Adapt the number and detail of milestones to the goal's complexity
+- This system supports ANY goal type: career, fitness, learning, creative, financial, personal growth, etc.`,
       },
       {
         role: "user",
@@ -106,8 +107,8 @@ Rules:
       progress: 0,
       current_milestone_index: 0,
       milestones,
-      running_level: running_level || null,
-      race_date: race_date || null,
+      running_level: current_level || null,
+      race_date: target_date || null,
       constraints: constraints || null,
     })
     .select()

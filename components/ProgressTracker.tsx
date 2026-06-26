@@ -53,12 +53,11 @@ export default function ProgressTracker({
   const [logging, setLogging] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
-  const [logType, setLogType] = useState("workout");
+  const [logType, setLogType] = useState("activity");
   const [description, setDescription] = useState("");
-  const [distance, setDistance] = useState("");
   const [duration, setDuration] = useState("");
   const [energy, setEnergy] = useState(3);
-  const [soreness, setSoreness] = useState(1);
+  const [effort, setEffort] = useState(3);
 
   const fetchLogs = useCallback(async () => {
     const res = await fetch(`/api/track-progress?mountain_id=${mountainId}`);
@@ -74,12 +73,11 @@ export default function ProgressTracker({
   }, [fetchLogs]);
 
   function resetForm() {
-    setLogType("workout");
+    setLogType("activity");
     setDescription("");
-    setDistance("");
     setDuration("");
     setEnergy(3);
-    setSoreness(1);
+    setEffort(3);
     setShowForm(false);
   }
 
@@ -90,9 +88,8 @@ export default function ProgressTracker({
     const logData: Record<string, unknown> = {
       description: description || undefined,
       energy_level: energy,
-      soreness_level: soreness,
+      effort_level: effort,
     };
-    if (distance) logData.distance = distance;
     if (duration) logData.duration = duration;
 
     const res = await fetch("/api/track-progress", {
@@ -120,10 +117,10 @@ export default function ProgressTracker({
     "w-full bg-stone-50 rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-stone-200 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
 
   const logTypes = [
-    { value: "workout", label: "Workout" },
-    { value: "completed_run", label: "Completed Run" },
-    { value: "missed_workout", label: "Missed Workout" },
-    { value: "milestone_task", label: "Task Done" },
+    { value: "activity", label: "Activity" },
+    { value: "completed_task", label: "Task Done" },
+    { value: "missed_activity", label: "Missed" },
+    { value: "milestone_reached", label: "Milestone" },
     { value: "rest_day", label: "Rest Day" },
   ];
 
@@ -190,41 +187,27 @@ export default function ProgressTracker({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={
-                logType === "missed_workout"
+                logType === "missed_activity"
                   ? "e.g. Skipped — too tired after work"
-                  : "e.g. Morning 5K run in the park"
+                  : "e.g. Completed draft of chapter 3, Studied for 2 hours"
               }
               className={inputClasses}
             />
           </div>
 
-          {/* Distance + Duration */}
-          {logType !== "missed_workout" && logType !== "rest_day" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1.5 uppercase tracking-wide">
-                  Distance
-                </label>
-                <input
-                  type="text"
-                  value={distance}
-                  onChange={(e) => setDistance(e.target.value)}
-                  placeholder="e.g. 5km"
-                  className={inputClasses}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1.5 uppercase tracking-wide">
-                  Duration
-                </label>
-                <input
-                  type="text"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  placeholder="e.g. 30 min"
-                  className={inputClasses}
-                />
-              </div>
+          {/* Duration */}
+          {logType !== "missed_activity" && logType !== "rest_day" && (
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1.5 uppercase tracking-wide">
+                Time Spent
+              </label>
+              <input
+                type="text"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                placeholder="e.g. 30 min, 2 hours"
+                className={inputClasses}
+              />
             </div>
           )}
 
@@ -253,16 +236,16 @@ export default function ProgressTracker({
             </div>
             <div>
               <label className="block text-xs font-medium text-stone-500 mb-1.5 uppercase tracking-wide">
-                Soreness
+                Effort
               </label>
               <div className="flex gap-1">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
                     key={n}
                     type="button"
-                    onClick={() => setSoreness(n)}
+                    onClick={() => setEffort(n)}
                     className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors duration-200 active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
-                      soreness >= n
+                      effort >= n
                         ? "bg-summit text-white"
                         : "bg-white text-stone-400 border border-stone-200"
                     }`}
@@ -418,7 +401,7 @@ export default function ProgressTracker({
                 >
                   <span
                     className={`w-2 h-2 rounded-full shrink-0 ${
-                      log.log_type === "missed_workout"
+                      log.log_type === "missed_activity"
                         ? "bg-summit"
                         : log.log_type === "rest_day"
                           ? "bg-stone-300"
@@ -439,11 +422,6 @@ export default function ProgressTracker({
                     </p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    {data.distance && (
-                      <span className="text-xs text-stone-500">
-                        {data.distance}
-                      </span>
-                    )}
                     {data.duration && (
                       <span className="text-xs text-stone-500">
                         {data.duration}
@@ -471,7 +449,7 @@ export default function ProgressTracker({
         >
           <p className="text-sm text-stone-500">
             No progress logged yet. Hit &ldquo;+ Log Progress&rdquo; to record
-            a workout, completed task, or rest day.
+            an activity, completed task, or rest day.
           </p>
         </div>
       )}

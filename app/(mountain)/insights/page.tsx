@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 
 interface Insight {
   title: string;
@@ -211,6 +212,14 @@ export default function InsightsPage() {
               </p>
             )}
           </div>
+          <div className="flex gap-2">
+          <Link
+            href={`/guide?mountain_id=${mountain.id}&context=${encodeURIComponent("Research insights for " + mountain.goal)}`}
+            className="text-sm px-4 py-2 rounded-xl bg-white text-stone-700 font-medium border border-stone-200 hover:bg-forest-50 hover:border-forest-300 hover:text-forest-800 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+            style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
+          >
+            Discuss With AI
+          </Link>
           <button
             onClick={runResearch}
             disabled={researching}
@@ -229,6 +238,7 @@ export default function InsightsPage() {
               "Run Research"
             )}
           </button>
+          </div>
         </div>
 
         {!research && !researching && (

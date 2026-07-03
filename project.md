@@ -504,6 +504,35 @@ Design principle: reflection is not the first thing users need every time — it
 
 ---
 
+### AI Guide: Actions + Suggested Replies (2026-07-03)
+
+The Guide Agent can now take actions during conversation and offer suggested reply chips.
+
+**API changes (`/api/guide`):**
+- Now returns structured JSON: `{ reply, suggested_replies, actions }`
+- `suggested_replies`: up to 3 short reply options shown as chips below the AI message
+- `actions`: array of actions the AI decided to take based on the conversation
+
+**Action types:**
+- `store_memory` — executed server-side automatically, silently stores an insight about the user into the `memory` table (category: motivation / obstacle / behavior_pattern / preference)
+- `log_progress` — executed server-side automatically, logs an activity or missed session to `progress_logs`
+- `advance_milestone` — returned to the client as a pending action with a confirmation card; user must click "Confirm" before the milestone advances
+
+**Frontend changes (`/app/guide/page.tsx`):**
+- Suggested reply chips render below the most recent AI message; clicking one auto-sends it
+- `advance_milestone` renders as a green confirmation card with the next milestone name; confirmed via `PATCH /api/mountains/[id]`
+- After milestone advance, a system message appears: "✓ Moved to [next stage]" with new suggested replies
+- Previous AI message's chips are cleared when the user sends a new message
+
+**Plan proposal flow:**
+- When the user wants to adjust their schedule or pace, the AI returns `propose_plan` action with extracted `user_constraints` and `available_time`
+- Frontend immediately calls `POST /api/plan` with those constraints (plan is generated and saved to DB)
+- A structured plan card appears inline in chat showing: weekly schedule grouped by day, task priorities (color-coded dots), focus area, and "Start here" next action
+- "Looks good ✓" — marks plan as confirmed in chat state and sends a confirmation message
+- "Make changes" — pre-fills the input with "Can you adjust the plan to " so user can specify the change
+
+---
+
 ### Progress Tracker: Simplified to Minimal Log Form (2026-07-03)
 
 **Problem:** The ProgressTracker on the Overview page had too much — 5 log types (activity, completed_task, missed_activity, milestone_reached, rest_day), energy + effort 1–5 sliders, full AI analysis output (summary, trend badge, 4 stat cards, risk signals), and a recent activity list. This made the Overview feel like a dashboard, not a doing tool.

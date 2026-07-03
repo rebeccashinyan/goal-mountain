@@ -12,6 +12,8 @@ export async function POST(request: Request) {
   const isAllMountains = !mountain_id || mountain_id === "all";
 
   let systemContext = "";
+  let milestones: { name: string; completed: boolean; current?: boolean }[] = [];
+  let currentMilestoneIndex = 0;
 
   if (isAllMountains) {
     const { data: mountains } = await supabase
@@ -35,24 +37,14 @@ ${JSON.stringify(
     goal: m.goal,
     summit: m.summit,
     progress: m.progress,
-    currentStage:
-      m.milestones[m.current_milestone_index]?.name || "Getting started",
+    currentStage: m.milestones[m.current_milestone_index]?.name || "Getting started",
     totalMilestones: m.milestones.length,
-    completedMilestones: m.milestones.filter(
-      (ms: { completed: boolean }) => ms.completed
-    ).length,
+    completedMilestones: m.milestones.filter((ms: { completed: boolean }) => ms.completed).length,
   })) || []
 )}
 
 Known patterns across all goals:
-${allMemories?.map((m) => m.content).join("; ") || "None yet"}
-
-In this mode you can:
-- Help prioritize between mountains
-- Identify which mountain needs attention
-- Spot overcommitment risks
-- Suggest where to invest limited time
-- Provide life-strategy-level guidance`;
+${allMemories?.map((m) => m.content).join("; ") || "None yet"}`;
   } else {
     const { data: mountain } = await supabase
       .from("mountains")
@@ -63,6 +55,9 @@ In this mode you can:
     if (!mountain) {
       return Response.json({ error: "Mountain not found" }, { status: 404 });
     }
+
+    milestones = mountain.milestones;
+    currentMilestoneIndex = mountain.current_milestone_index;
 
     const { data: memories } = await supabase
       .from("memory")
@@ -92,8 +87,8 @@ In this mode you can:
       .order("created_at", { ascending: false })
       .limit(10);
 
-    const currentMilestone =
-      mountain.milestones[mountain.current_milestone_index];
+    const currentMilestone = mountain.milestones[mountain.current_milestone_index];
+    const nextMilestone = mountain.milestones[mountain.current_milestone_index + 1];
 
     systemContext = `You are the AI Guide for Goal Mountain — a single companion who helps users navigate their goals.
 
@@ -104,6 +99,7 @@ Mountain details:
 - Summit: ${mountain.summit}
 - Progress: ${mountain.progress}%
 - Current stage: ${currentMilestone?.name || "Getting started"} — ${currentMilestone?.description || ""}
+- Next stage: ${nextMilestone?.name || "Summit"} — ${nextMilestone?.description || ""}
 - Target date: ${mountain.race_date || "Not set"}
 - Milestones completed: ${mountain.milestones.filter((m: { completed: boolean }) => m.completed).length} / ${mountain.milestones.length}
 
@@ -115,32 +111,43 @@ Recent activity:
 ${JSON.stringify(recentLogs?.map((l) => ({ type: l.log_type, data: l.data, date: l.created_at })) || [])}
 
 User patterns from memory:
-${memories?.map((m) => `[${m.category}] ${m.content}`).join("\n") || "None yet"}
-
-In this mode you can:
-- Coach on the current mountain
-- Explain what to do next and why
-- Help diagnose why the user is stuck
-- Suggest plan adjustments
-- Provide motivation based on their patterns`;
+${memories?.map((m) => `[${m.category}] ${m.content}`).join("\n") || "None yet"}`;
   }
 
-  const messages: { role: "system" | "user" | "assistant"; content: string }[] =
-    [
-      {
-        role: "system",
-        content: `${systemContext}
+  const actionDocs = isAllMountains
+    ? `Available actions (only include when clearly appropriate):
+- { "type": "store_memory", "category": "motivation|obstacle|behavior_pattern|preference", "content": "plain text insight to remember" }`
+    : `Available actions (only include when clearly appropriate):
+- { "type": "store_memory", "category": "motivation|obstacle|behavior_pattern|preference", "content": "plain text insight to remember" }
+- { "type": "advance_milestone" } — only when the user explicitly confirms they completed the current stage or want to move forward
+- { "type": "log_progress", "log_type": "activity|missed_activity", "description": "what happened" } — when the user tells you what they did or missed today
+- { "type": "propose_plan", "user_constraints": "...", "available_time": "..." } — when the user wants to adjust their schedule, change their pace, or update their plan. Extract their constraints and available time from the conversation. Your reply should end with a preview message like "I'll put together an updated plan — does this look good?"
+`;
+
+  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    {
+      role: "system",
+      content: `${systemContext}
 
 Rules:
-- You are ONE guide, not a chatbot — speak with continuity and personality
+- You are ONE guide — speak with continuity and personality
 - Be warm, direct, and specific — never generic
 - Reference the user's actual data, not hypotheticals
-- Keep responses concise (2-4 paragraphs max)
-- If you recommend an action, be specific: "Complete the first case study draft by Wednesday" not "work on your portfolio"
-- If you don't have enough data, say so and suggest what would help
-- Never break character — you are their mountain guide`,
-      },
-    ];
+- Keep responses concise (2–4 short paragraphs max)
+- If you recommend an action, be specific
+
+${actionDocs}
+
+Return a JSON object:
+{
+  "reply": "your conversational response to the user",
+  "suggested_replies": ["up to 3 short reply options the user might want to send next — or empty array"],
+  "actions": [] // array of action objects to execute, or empty array
+}
+
+Only include actions when the user has clearly expressed intent or given you information worth storing. Never fabricate actions. Memory should capture genuine insights about the user — not generic observations.`,
+    },
+  ];
 
   if (initial_context) {
     messages.push({
@@ -149,8 +156,11 @@ Rules:
     });
     messages.push({
       role: "assistant",
-      content:
-        "I see what you're looking at. What would you like to discuss about this?",
+      content: JSON.stringify({
+        reply: "I see what you're looking at. What would you like to discuss about this?",
+        suggested_replies: [],
+        actions: [],
+      }),
     });
   }
 
@@ -158,7 +168,7 @@ Rules:
     for (const msg of conversation_history) {
       messages.push({
         role: msg.role === "user" ? "user" : "assistant",
-        content: msg.content,
+        content: msg.role === "user" ? msg.content : JSON.stringify({ reply: msg.content, suggested_replies: [], actions: [] }),
       });
     }
   }
@@ -167,16 +177,55 @@ Rules:
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
+    response_format: { type: "json_object" },
     messages,
   });
 
-  const reply = completion.choices[0]?.message?.content;
-  if (!reply) {
-    return Response.json(
-      { error: "Failed to generate response" },
-      { status: 500 }
-    );
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) {
+    return Response.json({ error: "Failed to generate response" }, { status: 500 });
   }
 
-  return Response.json({ reply });
+  let parsed: { reply: string; suggested_replies: string[]; actions: Record<string, unknown>[] };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return Response.json({ reply: raw, suggested_replies: [], actions: [] });
+  }
+
+  const reply = parsed.reply || "";
+  const suggestedReplies: string[] = Array.isArray(parsed.suggested_replies) ? parsed.suggested_replies.slice(0, 3) : [];
+  const actions: Record<string, unknown>[] = Array.isArray(parsed.actions) ? parsed.actions : [];
+
+  // Execute store_memory and log_progress actions server-side
+  for (const action of actions) {
+    if (action.type === "store_memory" && mountain_id && mountain_id !== "all") {
+      await supabase.from("memory").insert({
+        mountain_id,
+        category: action.category || "behavior_pattern",
+        content: action.content,
+        metadata: { source: "guide" },
+      });
+    }
+
+    if (action.type === "log_progress" && mountain_id && mountain_id !== "all") {
+      await supabase.from("progress_logs").insert({
+        mountain_id,
+        log_type: action.log_type || "activity",
+        data: { description: action.description || "", source: "guide" },
+      });
+    }
+  }
+
+  // Return client-side actions (advance_milestone and propose_plan need UI confirmation)
+  const clientActions = actions
+    .filter((a) => a.type === "advance_milestone" || a.type === "propose_plan")
+    .map((a) => {
+      if (a.type === "advance_milestone") {
+        return { ...a, nextMilestoneName: milestones[currentMilestoneIndex + 1]?.name || "Summit" };
+      }
+      return a;
+    });
+
+  return Response.json({ reply, suggested_replies: suggestedReplies, actions: clientActions });
 }

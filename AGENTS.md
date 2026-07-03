@@ -242,7 +242,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 ```json
 {
   "mountain_id": "uuid",
-  "log_type": "activity | completed_task | missed_activity | milestone_reached | rest_day",
+  "log_type": "activity | missed_activity",
   "data": { } // freeform log payload
 }
 ```
@@ -345,7 +345,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 **Route:** `POST /api/guide`
 
-**Purpose:** The single AI companion the user converses with. Context switches between two modes based on whether a `mountain_id` is provided.
+**Purpose:** The single AI companion the user converses with. Context switches between two modes based on whether a `mountain_id` is provided. Can take actions during conversation — storing memories, logging progress, advancing milestones, and proposing plan changes.
 
 **Input:**
 ```json
@@ -360,15 +360,39 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 **All Mountains mode** (no mountain_id or `"all"`):
 - Loads all mountains + cross-mountain memories
 - Can discuss prioritization, overcommitment, life strategy
+- Only `store_memory` action available (no single mountain to modify)
 
 **Single Mountain mode** (mountain_id provided):
 - Loads full mountain data, current plan, latest reflection, recent logs, and memories
 - Coaches on the specific mountain: what to do next, why stuck, how to accelerate
+- All 4 action types available
 
-**Output:** `{ "reply": "text response" }`
+**Output:**
+```json
+{
+  "reply": "conversational response",
+  "suggested_replies": ["up to 3 short reply chips"],
+  "actions": []
+}
+```
+
+**Action types:**
+
+| Action | Executed by | When |
+|--------|-------------|------|
+| `store_memory` | Server-side (silent) | User reveals insight about motivation, obstacle, or behavior |
+| `log_progress` | Server-side (silent) | User describes what they did or missed |
+| `advance_milestone` | Client-side (requires confirm) | User explicitly says they completed the current stage |
+| `propose_plan` | Client-side (fetches plan, shows card) | User wants to adjust their schedule or pace |
+
+**Server-side actions** (`store_memory`, `log_progress`) are executed inside the route before returning — no round-trip needed. Memories are written with `source: "guide"` in metadata.
+
+**Client-side actions** are returned in the `actions` array for the frontend to handle:
+- `advance_milestone` → returns `nextMilestoneName`, rendered as a green confirmation card; on confirm, calls `PATCH /api/mountains/[id]` to mark milestone complete and advance index
+- `propose_plan` → returns `user_constraints` and `available_time`; frontend calls `POST /api/plan` with those values, renders a structured plan card (schedule, priority dots, next action); user clicks "Looks good ✓" or "Make changes"
 
 **DB reads:** `mountains`, `memory`, `weekly_plans`, `reflections`, `progress_logs`  
-**DB writes:** none
+**DB writes:** `memory` (store_memory), `progress_logs` (log_progress) — executed server-side
 
 **Navigation flows:**
 - Dashboard → AI Guide tab → All Mountains mode
@@ -421,7 +445,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 | Progress Tracking | mountains, progress_logs | progress_logs, mountains |
 | Reflection | mountains, reflections, progress_logs, memory | reflections, memory |
 | Memory | — | memory |
-| Guide | mountains, memory, weekly_plans, reflections, progress_logs | — |
+| Guide | mountains, memory, weekly_plans, reflections, progress_logs | memory, progress_logs |
 | Strategic Intelligence | mountains, memory, reflections, progress_logs | — |
 
 ---

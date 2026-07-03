@@ -152,95 +152,126 @@ Milestones:
 
 ## Core AI Agents
 
-### Mountain Generator Agent
+### Mountain Chat Agent
 
-Transforms goals into structured mountain journeys.
+Conversational intake before a mountain is created. Extracts a structured goal from freeform conversation.
 
 **Responsibilities**
-- Define camps
-- Create milestones
-- Generate checkpoints
+- Ask clarifying questions one at a time
+- Refine vague goals into specific, actionable ones
+- Collect current level, target date, and constraints
+- Confirm the goal with the user before handing off to the Generator
+
+### Mountain Generator Agent
+
+Transforms a confirmed goal into a structured mountain journey. Uses Research Agent output to ground milestones in real-world knowledge.
+
+**Responsibilities**
+- Define camps (major stages)
+- Create checkpoints within each camp
 - Establish summit criteria
-- Continuously evolve the mountain
+- Incorporate proven industry stages from the Research Agent
+- Set realistic duration estimates based on research
 
 ### Research Agent
 
-Provides external knowledge and domain expertise.
+Provides external, real-world knowledge about a goal. Operates in two modes:
+
+**Pre-mountain mode** — called before the mountain exists. Returns proven stages, key skills, common pitfalls, and resources. Output is passed to the Generator to ground milestone structure in real-world knowledge. Also saved to DB so the Insights page can display it.
+
+**Post-mountain mode** — called after a mountain exists. Adds market trends, career benchmarks, best practices, and opportunities/risks specific to the user's current stage.
 
 **Responsibilities**
-- Analyze industry trends
-- Recommend learning resources
-- Identify skill gaps
-- Surface opportunities
-- Compare alternative paths
-- Gather relevant information for planning
+- Analyze industry stages and real-world benchmarks
+- Recommend specific, actionable learning resources
+- Identify skill gaps at the user's current stage
+- Surface opportunities and risks
+- Avoid repeating past research — always find new angles
 
 ### Planning + Strategy Agent
 
-Creates adaptive execution plans and helps users decide where to invest effort.
+Creates adaptive weekly schedules and decides the highest-impact next action.
 
 **Responsibilities**
-- Build weekly plans
-- Prioritize actions
-- Adjust schedules
-- Adapt when circumstances change
-- Recommend next best actions
-- Evaluate trade-offs
-- Identify bottlenecks
-- Analyze opportunities
-- Simulate future scenarios
-- Optimize progress toward goals
+- Build weekly plans adapted to the goal type
+- Learn from past plan performance — reduce load after missed activity, level up when ahead
+- Surface the single most important action this week
+- Identify the very next thing to do right now
+- Provide broader strategic thinking about trajectory
 
 ### Progress Tracking Agent
 
-Measures progress toward the summit.
+Records activity and updates the mountain state.
 
 **Responsibilities**
-- Track checkpoints
-- Track camp completion
-- Detect trends
-- Measure consistency
-- Identify progress risks
+- Accept activity logs (activity, completed_task, missed_activity, milestone_reached, rest_day)
+- Update progress percentage
+- Advance milestones when complete
+- Detect trends (ahead / on track / behind)
+- Surface risk signals early
 
 ### Reflection Agent
 
-Turns experience into learning.
+Turns weekly experience into learning. Auto-writes insights to the Memory Agent.
 
 **Responsibilities**
-- Guide weekly reflection
-- Identify recurring blockers
-- Extract lessons learned
-- Improve future planning
+- Process the user's weekly self-reflection
+- Identify recurring blockers across past reflections (flags if seen 3+ times)
+- Extract lessons learned and what worked vs. what failed
+- Suggest concrete plan adjustments
+- Write behavior patterns, motivations, and obstacles to memory automatically
 
 ### Memory Agent
 
-Builds long-term personalization.
+Stores and retrieves long-term knowledge about the user. Most writes come from the Reflection Agent automatically.
 
-The AI remembers:
-- Past goals
-- Successes
-- Failures
-- Motivation triggers
-- Reflection history
-- Behavior patterns
-- Learning preferences
-- Planning adjustments
+**Memory categories:**
+- `goal` — stated goals and ambitions
+- `preference` — how the user likes to work
+- `motivation` — what energizes or drives them
+- `obstacle` — recurring blockers
+- `behavior_pattern` — observed patterns (e.g. "works best in morning sessions")
 
-Memory transforms Goal Mountain from a chatbot into a long-term companion.
+Memory personalizes every other agent — Planning, Research, Reflection, Guide, and Strategic Intelligence all inject relevant memories into their context.
+
+### Guide Agent
+
+The single AI companion the user converses with. Context switches based on whether a specific mountain is selected.
+
+**All Mountains mode** — cross-mountain strategy: prioritization, overcommitment risks, life-strategy guidance.
+
+**Single Mountain mode** — mountain-specific coaching: what to do next, why stuck, how to accelerate.
+
+**Responsibilities**
+- Maintain one consistent persona across all contexts
+- Reference the user's actual data, never speak in hypotheticals
+- When accessed from Insights, receive the insight as initial context
+
+### Strategic Intelligence Agent
+
+Runs a deep, on-demand analysis of the user's goal journey. Triggered from the Insights page. Stateless — no DB writes.
+
+**Responsibilities**
+- Estimate summit probability and consistency score
+- Recommend the highest-leverage action
+- Identify the true bottleneck (vs. what is not the bottleneck)
+- Analyze skill gaps, opportunities, and trade-offs
+- Generate three scenarios: current pace / increased effort / stopped
+- Provide a mentor-level insight from someone who has achieved this goal
 
 ## AI Strategic Intelligence
 
 One of Goal Mountain's key differentiators is its ability to provide strategic guidance rather than simple progress tracking.
 
-The AI continuously analyzes:
+The Strategic Intelligence Agent is triggered on demand from the Insights page. It analyzes the full picture of the user's journey in one call:
 
 - **Skill Gap Analysis** — Where the user is today versus where they need to be.
-- **Bottleneck Analysis** — What is actually preventing progress.
+- **Bottleneck Analysis** — What is actually preventing progress (and what is not).
 - **Opportunity Analysis** — External opportunities and emerging trends.
-- **Trade-Off Analysis** — How users should allocate limited time and effort.
-- **Highest Leverage Actions** — The actions most likely to accelerate progress.
-- **Scenario Planning** — Forecasting potential future outcomes based on current behavior.
-- **Mentor Insights** — Personalized coaching and strategic advice.
+- **Trade-Off Analysis** — How to allocate limited time and effort.
+- **Highest Leverage Actions** — The single action most likely to accelerate progress.
+- **Scenario Planning** — Three forecasts: current pace, increased effort, stopped.
+- **Mentor Insights** — One piece of wisdom from someone who has achieved this goal.
 
 ## Insights System
 
@@ -277,16 +308,18 @@ Goal Mountain continuously generates insights to help users better understand th
 
 ## User Journey
 
-1. Create a mountain
-2. AI generates a personalized expedition map
-3. Camps and checkpoints are created
-4. User progresses through the journey
-5. AI adapts plans based on behavior
-6. AI identifies risks and opportunities
-7. AI provides strategic guidance
-8. Mountain evolves over time
-9. User reaches the summit
-10. AI helps define the next mountain
+1. User describes their goal in the Mountain Chat (conversational intake)
+2. Research Agent gathers real-world knowledge about the goal (pre-mountain mode)
+3. Mountain Generator creates camps and checkpoints grounded in the research
+4. "About Your Plan" shows the user what the research found and how the plan is structured
+5. User navigates to their mountain and starts climbing
+6. Planning Agent generates adaptive weekly schedules
+7. User logs activity; Progress Tracking Agent updates milestones and detects trends
+8. Reflection Agent processes weekly reviews and writes patterns to memory
+9. Research Agent surfaces new knowledge as the user advances through stages (post-mountain mode)
+10. Strategic Intelligence Agent provides on-demand deep analysis from the Insights page
+11. Guide Agent coaches throughout the journey — specific to one mountain or across all mountains
+12. User reaches the summit; AI helps define the next mountain
 
 ## Future Vision
 
@@ -468,6 +501,20 @@ The mountain Overview page was restructured based on the principle that the Moun
 5. **Weekly Reflection** (right column, compact) — last reflection date + 2-line summary, single "Open Reflection" / "Start Reflection" button linking to Insights
 
 Design principle: reflection is not the first thing users need every time — it's an entry point, not a primary section.
+
+---
+
+### Progress Tracker: Simplified to Minimal Log Form (2026-07-03)
+
+**Problem:** The ProgressTracker on the Overview page had too much — 5 log types (activity, completed_task, missed_activity, milestone_reached, rest_day), energy + effort 1–5 sliders, full AI analysis output (summary, trend badge, 4 stat cards, risk signals), and a recent activity list. This made the Overview feel like a dashboard, not a doing tool.
+
+**Fix:** Replaced with a minimal inline form:
+- Collapsed by default — just a dashed "+ Log Progress" button
+- Expands to: 3 type chips (Did it / Missed / Rest day) + one optional description field + Log button
+- On success: "✓ Logged" confirmation, auto-collapses after 1.8s
+- No analysis output on the Overview — AI analysis belongs on the Insights page
+- No recent activity list — that's the Insights progress timeline's job
+- `milestone_reached` and `rest_day` removed as manual types — the Progress Tracking Agent infers milestone completion from description and mountain state; rest day distinction is handled via the description field on a "Missed" log
 
 ---
 

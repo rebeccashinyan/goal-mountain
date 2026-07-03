@@ -66,8 +66,23 @@ If there's any updates for the project update to Project.md
 After updating Project.md, reply with:
 Updated in Project.md
 
-## Mandatory Response Suffix
-Every time you finish a response, you must end with this exact line:
-hi finished!
+If there's any updates for the project update to AGENTS.md
+After updating Project.md, reply with:
+Updated in AGENTS.md
+
+If there's any updates for the project update to UI_SPEC.md
+After updating Project.md, reply with:
+Updated in UI_SPEC.md
+
+If there's any updates for the project update to DATABASE.md
+After updating Project.md, reply with:
+Updated in DATABASE.md
+
+If there's any updates for the project update to CLAUDE.md
+After updating Project.md, reply with:
+Updated in CLAUDE.md
+
+
+
 
 

@@ -226,6 +226,40 @@ function InsightsContent() {
   return (
     <div className="max-w-[1180px] mx-auto mt-8 space-y-8 pb-10">
 
+      {/* ── Header card ──────────────────────────────────────────────────── */}
+      <div
+        className="flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between"
+        style={{ boxShadow: cardShadow }}
+      >
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
+            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
+              <rect x="6" y="7" width="18" height="16" rx="4" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.6" />
+              <path d="M11 18V14M15 18V11M19 18V13" stroke="#1E5235" strokeWidth="2" strokeLinecap="round" />
+              <path d="M22 4.5L23 7L25.5 8L23 9L22 11.5L21 9L18.5 8L21 7L22 4.5Z" fill="#E7B85B" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
+              Research Agent
+            </p>
+            <h2 className="mt-1 text-3xl font-bold text-forest-950">
+              Insights for {mountain.goal}
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm text-stone-500">
+              Skill gaps, resources, risks, and opportunities for the current stage of this climb.
+            </p>
+          </div>
+        </div>
+        <Link
+          href={`/guide?mountain_id=${mountain.id}&context=${encodeURIComponent("Research insights for " + mountain.goal)}`}
+          className="text-sm px-4 py-2 rounded-xl bg-white text-forest-800 font-semibold border border-forest-200 hover:bg-forest-50 hover:border-forest-300 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+          style={{ boxShadow: raisedShadow }}
+        >
+          Discuss With AI
+        </Link>
+      </div>
+
       {/* ── Journey Health ───────────────────────────────────────────────── */}
       <section>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400 mb-3">

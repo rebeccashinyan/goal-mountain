@@ -30,6 +30,7 @@ export default function CreateMountainModal({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generatingStep, setGeneratingStep] = useState<"researching" | "building" | null>(null);
   const [goalData, setGoalData] = useState<GoalData | null>(null);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +51,7 @@ export default function CreateMountainModal({
       setGoalData(null);
       setError("");
       setGenerating(false);
+      setGeneratingStep(null);
       setTimeout(() => inputRef.current?.focus(), 150);
     } else {
       setMessages([]);
@@ -57,6 +59,7 @@ export default function CreateMountainModal({
       setGoalData(null);
       setError("");
       setGenerating(false);
+      setGeneratingStep(null);
     }
   }, [open]);
 
@@ -138,10 +141,29 @@ export default function CreateMountainModal({
     setError("");
 
     try {
-      const body: Record<string, string> = { goal: data.goal };
+      // Step 1: Research the goal externally
+      setGeneratingStep("researching");
+      let researchContext = null;
+      try {
+        const researchRes = await fetch("/api/research", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ goal: data.goal }),
+        });
+        if (researchRes.ok) {
+          researchContext = await researchRes.json();
+        }
+      } catch {
+        // Research failing should not block mountain generation
+      }
+
+      // Step 2: Generate mountain with research context
+      setGeneratingStep("building");
+      const body: Record<string, unknown> = { goal: data.goal };
       if (data.current_level) body.current_level = data.current_level;
       if (data.target_date) body.target_date = data.target_date;
       if (data.constraints) body.constraints = data.constraints;
+      if (researchContext) body.research_context = researchContext;
 
       const res = await fetch("/api/generate-mountain", {
         method: "POST",
@@ -159,6 +181,7 @@ export default function CreateMountainModal({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setGenerating(false);
+      setGeneratingStep(null);
     }
   }
 
@@ -264,11 +287,24 @@ export default function CreateMountainModal({
 
           {generating && (
             <div className="flex justify-start">
-              <div className="bg-forest-50 border border-forest-200 rounded-2xl px-4 py-2.5">
+              <div className="bg-forest-50 border border-forest-200 rounded-2xl px-4 py-3 space-y-2">
                 <span className="flex items-center gap-2 text-sm text-forest-700 font-medium">
                   <span className="w-3.5 h-3.5 border-2 border-forest-300 border-t-forest-700 rounded-full animate-spin" />
-                  Building your mountain...
+                  {generatingStep === "researching"
+                    ? "Researching your goal..."
+                    : "Building your mountain..."}
                 </span>
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md ${generatingStep === "researching" ? "text-forest-700 bg-forest-100" : "text-forest-500 bg-forest-50"}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${generatingStep === "researching" ? "bg-forest-500 animate-pulse" : "bg-forest-400"}`} />
+                    Research
+                  </div>
+                  <span className="text-stone-300 text-xs">→</span>
+                  <div className={`flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md ${generatingStep === "building" ? "text-forest-700 bg-forest-100" : "text-stone-400 bg-stone-100"}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${generatingStep === "building" ? "bg-forest-500 animate-pulse" : "bg-stone-300"}`} />
+                    Generate
+                  </div>
+                </div>
               </div>
             </div>
           )}

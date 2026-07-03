@@ -413,3 +413,58 @@ All agents have been updated to support any goal type (career, fitness, learning
 - **CreateMountainModal** — "Current Level" / "Target Date" labels (generic)
 
 No DB migration needed — API routes map generic frontend names to existing DB columns (`running_level`, `race_date`).
+
+---
+
+### Navigation: AI Guide Stays in Mountain Context (2026-07-03)
+
+**Problem:** Clicking "AI Guide" from inside an individual mountain sent the user to `/guide` which used the dashboard layout (Mountains, Analysis, AI Guide), breaking the mountain nav context.
+
+**Fix:**
+- Moved `/guide` page out of the `(dashboard)` route group into its own `app/guide/` directory with a dedicated adaptive layout
+- `app/guide/GuideNav.tsx` (client component) reads `mountain_id` from the URL — if present, renders `MountainDetailNav`; otherwise renders dashboard tabs
+- `MountainDetailNav` updated to fall back to `mountain_id` param when `id` is not in the URL, so Overview/Insights links retain the correct mountain ID when navigating from the guide page
+
+---
+
+### Insights Page: Full Rebuild (2026-07-03)
+
+The Insights page was rebuilt to match the intended design with 6 sections:
+
+1. **Header card** — "Research Agent" label, "Insights for [goal]", Discuss With AI button (restored to original style)
+2. **Journey Health** — 4-stat row: Current Camp, Progress, Consistency (computed from logs), Summit Probability (from AI)
+3. **Patterns & Learnings** — pulls `behavior_pattern` memories from the Memory Agent
+4. **Obstacles & Risks** — aggregates blockers from all reflections, deduplicates, shows top 4 with detected count and fix
+5. **AI Strategic Intelligence** — 4×2 grid of numbered cards (4.1–4.8): Recommended Strategy, Skill Gap Analysis, Highest Leverage Actions, Bottleneck Analysis, Opportunity Analysis, Trade-Off Analysis, Scenario Planning, Mentor Insights. Triggered on demand via "Generate Analysis" button.
+6. **Progress Timeline + AI Predictions** — weekly calendar from progress logs; AI Predictions populated when analysis is generated
+
+**New API:** `POST /api/insights` — takes `mountain_id`, aggregates mountain + memory + reflection + log data, calls GPT to generate all 8 strategic cards + predictions in one structured call. Stateless (no DB save).
+
+---
+
+### Research Agent: Now Feeds Mountain Generator (2026-07-03)
+
+**Problem:** The Mountain Generator created camps/milestones from training data alone, without grounding them in real-world domain knowledge.
+
+**Fix — two-phase mountain creation:**
+
+1. **Research Agent runs first** (`/api/research` now supports pre-mountain mode): called with just a `goal` string (no `mountain_id`). Returns proven stages, key skills, common pitfalls, best resources, and insights. Does not save to DB.
+
+2. **Generator uses research context** (`/api/generate-mountain` now accepts `research_context`): the system prompt explicitly instructs the generator to use proven stages as camp structure, incorporate skill gaps as checkpoint focus areas, use realistic duration estimates from research, and use industry-standard terminology.
+
+**Modal UI:** `generateMountain()` in `CreateMountainModal` now chains both steps with a two-step progress indicator (Research → Generate). Research failure is silent and non-blocking.
+
+---
+
+### Overview Page: Restructured Layout (2026-07-03)
+
+The mountain Overview page was restructured based on the principle that the Mountain Visualization is the star, and the rest of the page supports the user's "doing" workflow.
+
+**New structure:**
+1. **Header card** — goal, summit, progress pills, Discuss With AI
+2. **Mountain Visualization** — full width, prominent, unchanged
+3. **This Week's Plan** (wide left column) — next best action highlighted, 3–5 tasks from schedule with priority dots, "AI Generated" label, Regenerate button
+4. **Progress** (right column, compact) — progress bar, current camp, next milestone, last activity date, milestone count, inline quick-log form
+5. **Weekly Reflection** (right column, compact) — last reflection date + 2-line summary, single "Open Reflection" / "Start Reflection" button linking to Insights
+
+Design principle: reflection is not the first thing users need every time — it's an entry point, not a primary section.

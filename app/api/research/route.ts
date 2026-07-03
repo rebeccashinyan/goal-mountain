@@ -2,11 +2,56 @@ import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
-  const { mountain_id, planning_requests, skill_gaps: inputSkillGaps } =
+  const { mountain_id, goal: rawGoal, planning_requests, skill_gaps: inputSkillGaps } =
     await request.json();
 
+  // ── Pre-mountain mode: called with just a goal before the mountain exists ──
+  if (rawGoal && !mountain_id) {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are the Research Agent for Goal Mountain. Before a mountain is built, research the external landscape for a user's goal so the generator can create accurate, real-world-grounded milestones.
+
+Return a JSON object:
+{
+  "proven_stages": [
+    { "stage": "stage name", "description": "what this stage entails", "typical_duration": "e.g. 2-4 weeks" }
+  ],
+  "key_skills": ["skill or knowledge area required"],
+  "common_pitfalls": ["common mistake or blocker people face"],
+  "best_resources": [
+    { "name": "resource name", "type": "course|book|tool|community|practice", "why": "why this is important" }
+  ],
+  "insights": [
+    { "title": "insight title", "detail": "specific finding about what it takes to achieve this goal" }
+  ],
+  "skill_gaps": [
+    { "skill": "skill", "priority": "high|medium|low", "suggestion": "how to build it" }
+  ]
+}
+
+Be specific and factual. Use real-world knowledge about what this goal requires.`,
+        },
+        {
+          role: "user",
+          content: `Research what it takes to achieve this goal: ${rawGoal}`,
+        },
+      ],
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) {
+      return Response.json({ error: "Failed to generate research" }, { status: 500 });
+    }
+    return Response.json(JSON.parse(content));
+  }
+
+  // ── Standard mode: called after a mountain exists ──────────────────────────
   if (!mountain_id) {
-    return Response.json({ error: "mountain_id is required" }, { status: 400 });
+    return Response.json({ error: "mountain_id or goal is required" }, { status: 400 });
   }
 
   const { data: mountain, error: fetchError } = await supabase

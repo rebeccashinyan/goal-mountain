@@ -2,7 +2,7 @@ import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
-  const { goal, current_level, target_date, constraints } = await request.json();
+  const { goal, current_level, target_date, constraints, research_context } = await request.json();
 
   if (!goal || typeof goal !== "string" || goal.trim().length === 0) {
     return Response.json({ error: "Goal is required" }, { status: 400 });
@@ -19,6 +19,11 @@ export async function POST(request: Request) {
     constraints && `User constraints: ${constraints}`,
     memories?.length &&
       `Known user context from past goals: ${memories.map((m: { content: string }) => m.content).join("; ")}`,
+    research_context && `\n--- External Research (use this to ground the milestones in real-world knowledge) ---\n${
+      typeof research_context === "string"
+        ? research_context
+        : JSON.stringify(research_context, null, 2)
+    }`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -57,7 +62,8 @@ Rules:
 - Set a clear summit success condition
 - If user context is provided (current level, target date, constraints), adapt the mountain accordingly
 - Adapt the number and detail of milestones to the goal's complexity
-- This system supports ANY goal type: career, fitness, learning, creative, financial, personal growth, etc.`,
+- This system supports ANY goal type: career, fitness, learning, creative, financial, personal growth, etc.
+- If external research context is provided, use it to ground the milestones in real-world knowledge: use the proven stages as the basis for camps, incorporate the identified skill gaps as checkpoint focus areas, use realistic duration estimates from the research, and name things using industry-standard terminology where appropriate`,
       },
       {
         role: "user",

@@ -7,7 +7,7 @@ import type { TabConfig } from "./TabNav";
 
 function MountainDetailNavInner() {
   const searchParams = useSearchParams();
-  const mountainId = searchParams.get("id");
+  const mountainId = searchParams.get("id") || searchParams.get("mountain_id");
 
   const contextTabs: TabConfig[] = mountainContextTabs.map((tab) => {
     if (tab.href === "/guide" && mountainId) {

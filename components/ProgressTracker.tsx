@@ -19,7 +19,7 @@ interface ProgressAnalysis {
   summary: string;
 }
 
-const cardShadow = "0 1px 4px rgba(20,60,35,0.04)";
+const cardShadow = "0 10px 28px rgba(43, 58, 42, 0.07), 0 1px 2px rgba(43, 58, 42, 0.05)";
 
 const trendStyle: Record<string, { label: string; color: string; bg: string }> =
   {
@@ -69,6 +69,7 @@ export default function ProgressTracker({
   }, [mountainId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLogs();
   }, [fetchLogs]);
 
@@ -114,7 +115,7 @@ export default function ProgressTracker({
   }
 
   const inputClasses =
-    "w-full bg-stone-50 rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-stone-200 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
+    "w-full bg-white rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-[#E7E0D7] focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
 
   const logTypes = [
     { value: "activity", label: "Activity" },
@@ -134,13 +135,30 @@ export default function ProgressTracker({
   }
 
   return (
-    <div className="mt-10 space-y-6">
+    <section className="mt-10 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-stone-800">Progress</h2>
+      <div className="flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: cardShadow }}>
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+              <path d="M5 19H21" stroke="#1E5235" strokeWidth="1.6" strokeLinecap="round" />
+              <path d="M7 16L11 12L14 14L20 7" stroke="#1E5235" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="20" cy="7" r="2.5" fill="#E7B85B" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
+              Progress Tracker
+            </p>
+            <h2 className="mt-1 text-2xl font-bold text-forest-950">Progress</h2>
+            <p className="mt-1 text-sm text-stone-500">
+              Log what happened so your guide can read the terrain.
+            </p>
+          </div>
+        </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="text-sm px-4 py-2 rounded-xl bg-white text-stone-700 font-medium border border-stone-200 hover:bg-forest-50 hover:border-forest-300 hover:text-forest-800 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+          className="text-sm px-4 py-2 rounded-xl bg-white text-forest-800 font-semibold border border-forest-200 hover:bg-forest-50 hover:border-forest-300 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
           style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
           type="button"
         >
@@ -151,7 +169,7 @@ export default function ProgressTracker({
       {/* Log Form */}
       {showForm && (
         <div
-          className="bg-stone-50 rounded-2xl p-5 border border-stone-200 space-y-4"
+          className="rounded-3xl border border-[#E7E0D7] bg-white p-5 space-y-4"
           style={{ boxShadow: cardShadow }}
         >
           {/* Log Type */}
@@ -282,7 +300,7 @@ export default function ProgressTracker({
           {/* Summary + Trend */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div
-              className="lg:col-span-2 bg-stone-50 rounded-2xl p-5 border border-stone-200"
+              className="lg:col-span-2 rounded-2xl border border-[#E7E0D7] bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
@@ -314,7 +332,7 @@ export default function ProgressTracker({
           {/* Stats row */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div
-              className="bg-stone-50 rounded-2xl p-4 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-4"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs text-stone-400 font-medium uppercase tracking-wide">
@@ -325,7 +343,7 @@ export default function ProgressTracker({
               </p>
             </div>
             <div
-              className="bg-stone-50 rounded-2xl p-4 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-4"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs text-stone-400 font-medium uppercase tracking-wide">
@@ -336,7 +354,7 @@ export default function ProgressTracker({
               </p>
             </div>
             <div
-              className="bg-stone-50 rounded-2xl p-4 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-4"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs text-stone-400 font-medium uppercase tracking-wide">
@@ -348,7 +366,7 @@ export default function ProgressTracker({
               </p>
             </div>
             <div
-              className="bg-stone-50 rounded-2xl p-4 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-4"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs text-stone-400 font-medium uppercase tracking-wide">
@@ -388,7 +406,7 @@ export default function ProgressTracker({
       {/* Recent Activity */}
       {logs.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-stone-700 mb-3">
+          <h3 className="text-xl font-bold text-forest-950 mb-3">
             Recent Activity
           </h3>
           <div className="space-y-2">
@@ -397,7 +415,8 @@ export default function ProgressTracker({
               return (
                 <div
                   key={log.id}
-                  className="flex items-center gap-3 bg-stone-50 rounded-xl px-4 py-3 border border-stone-100"
+                  className="flex items-center gap-3 rounded-2xl border border-[#E7E0D7] bg-white px-4 py-3"
+                  style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.04)" }}
                 >
                   <span
                     className={`w-2 h-2 rounded-full shrink-0 ${
@@ -444,15 +463,24 @@ export default function ProgressTracker({
       {/* Empty state */}
       {!analysis && logs.length === 0 && !showForm && (
         <div
-          className="bg-stone-50 rounded-2xl p-8 border border-stone-200 text-center"
+          className="rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] p-8 text-center"
           style={{ boxShadow: cardShadow }}
         >
-          <p className="text-sm text-stone-500">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+              <path d="M5 18H21" stroke="#1E5235" strokeWidth="1.6" strokeLinecap="round" />
+              <path d="M7 15L11 11L14 13L20 6" stroke="#1E5235" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <p className="text-base font-semibold text-stone-700">
+            No trail notes yet
+          </p>
+          <p className="mt-1 text-sm text-stone-500">
             No progress logged yet. Hit &ldquo;+ Log Progress&rdquo; to record
             an activity, completed task, or rest day.
           </p>
         </div>
       )}
-    </div>
+    </section>
   );
 }

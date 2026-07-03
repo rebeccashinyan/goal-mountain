@@ -22,7 +22,10 @@
 
 body {
   font-family: var(--font-body), system-ui, sans-serif;
-  background: #FAFAF8;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(208, 236, 221, 0.38), transparent 28rem),
+    radial-gradient(circle at 86% 8%, rgba(240, 172, 164, 0.16), transparent 24rem),
+    #FAFAF8;
   color: #1c1917;
   line-height: 1.7;
 }

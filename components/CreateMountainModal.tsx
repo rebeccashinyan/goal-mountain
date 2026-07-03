@@ -37,6 +37,7 @@ export default function CreateMountainModal({
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessages([
         {
           id: "welcome",
@@ -171,7 +172,7 @@ export default function CreateMountainModal({
       />
 
       <div
-        className="relative bg-white rounded-3xl w-full max-w-lg mx-4 flex flex-col"
+        className="relative bg-white rounded-3xl w-full max-w-lg mx-4 flex flex-col overflow-hidden border border-[#E7E0D7]"
         style={{
           height: "min(580px, 85vh)",
           boxShadow:
@@ -179,11 +180,24 @@ export default function CreateMountainModal({
         }}
       >
         {/* Header */}
-        <div className="px-6 pt-6 pb-3 border-b border-stone-100">
+        <div className="bg-[#FBF8F1] px-6 pt-6 pb-4 border-b border-[#E7E0D7]">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-stone-900">
-              Create a New Mountain
-            </h2>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
+                <svg width="23" height="23" viewBox="0 0 23 23" fill="none" aria-hidden="true">
+                  <path d="M3 19L11.5 5L20 19H3Z" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.5" strokeLinejoin="round" />
+                  <path d="M11.5 5L8.8 19" stroke="#1E5235" strokeWidth="1.2" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-forest-600">
+                  Mountain Generator
+                </p>
+                <h2 className="text-lg font-bold text-stone-900">
+                  Create a New Mountain
+                </h2>
+              </div>
+            </div>
             <button
               type="button"
               onClick={onClose}

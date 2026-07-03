@@ -43,6 +43,7 @@ function GuideContent() {
   }, [paramMountainId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchMountains();
   }, [fetchMountains]);
 
@@ -145,46 +146,77 @@ function GuideContent() {
 
   return (
     <div
-      className="max-w-[800px] mx-auto mt-2 flex flex-col"
+      className="max-w-[1180px] mx-auto mt-8 flex flex-col"
       style={{ height: "calc(100vh - 100px)" }}
     >
-      {/* Context Selector */}
-      <div className="flex items-center gap-3 mb-4">
-        <label className="text-xs font-medium text-stone-400 uppercase tracking-wide shrink-0">
-          Mountain
-        </label>
-        <select
-          value={selectedContext}
-          onChange={(e) => handleContextChange(e.target.value)}
-          className="text-sm bg-white rounded-xl px-4 py-2 border border-stone-200 text-stone-700 font-medium focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200"
-        >
-          <option value="all">All Mountains</option>
-          {mountains.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.goal}
-            </option>
-          ))}
-        </select>
+      <div className="mb-5 flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: "0 10px 28px rgba(43, 58, 42, 0.08), 0 1px 2px rgba(43, 58, 42, 0.06)" }}>
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100" style={{ boxShadow: "0 8px 18px rgba(30,82,53,0.08)" }}>
+            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
+              <circle cx="15" cy="15" r="11" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.6" />
+              <path d="M15 5.5L18.1 12L24.5 15L18.1 18L15 24.5L11.9 18L5.5 15L11.9 12L15 5.5Z" fill="#E7B85B" stroke="#1E5235" strokeWidth="1.2" />
+              <circle cx="15" cy="15" r="2.2" fill="#1E5235" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
+              AI Compass Guide
+            </p>
+            <h2 className="mt-1 text-3xl font-bold text-forest-950">
+              Ask for your next best move
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm text-stone-500">
+              One guide, different context. Choose all mountains for life strategy or one mountain for focused coaching.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-semibold text-stone-400 uppercase tracking-[0.14em] shrink-0">
+            Context
+          </label>
+          <select
+            value={selectedContext}
+            onChange={(e) => handleContextChange(e.target.value)}
+            className="min-w-[220px] text-sm bg-white rounded-xl px-4 py-3 border border-stone-200 text-stone-700 font-semibold focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200"
+          >
+            <option value="all">All Mountains</option>
+            {mountains.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.goal}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Chat Area */}
       <div
-        className="flex-1 flex flex-col rounded-2xl bg-stone-100 overflow-hidden"
+        className="flex-1 flex flex-col overflow-hidden rounded-3xl border border-[#E7E0D7] bg-white"
         style={{
           boxShadow:
-            "0 1px 4px rgba(20,60,35,0.06), 0 4px 14px rgba(20,60,35,0.03)",
+            "0 10px 28px rgba(43, 58, 42, 0.07)",
         }}
       >
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto bg-[#FBF8F1] p-6 space-y-4">
           {messages.length === 0 && (
-            <div className="text-center mt-16 space-y-4">
-              <p className="text-stone-400 text-sm">
+            <div className="mx-auto mt-14 max-w-3xl text-center">
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100" style={{ boxShadow: "0 8px 18px rgba(30,82,53,0.08)" }}>
+                <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+                  <circle cx="17" cy="17" r="12" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.6" />
+                  <path d="M17 7L20.2 14L27 17L20.2 20L17 27L13.8 20L7 17L13.8 14L17 7Z" fill="#E7B85B" stroke="#1E5235" strokeWidth="1.2" />
+                </svg>
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-forest-600">
+                {selectedLabel}
+              </p>
+              <p className="mt-2 text-lg font-semibold text-stone-700">
                 {selectedContext === "all"
                   ? "Ask about your overall strategy, priorities, or any mountain."
                   : `Ask about your ${selectedLabel} journey.`}
               </p>
-              <div className="flex flex-wrap justify-center gap-2">
+              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {selectedContext === "all"
                   ? [
                       "What should I prioritize?",
@@ -198,7 +230,7 @@ function GuideContent() {
                           setInput(q);
                           inputRef.current?.focus();
                         }}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-white text-stone-600 border border-stone-200 hover:border-forest-300 hover:text-forest-700 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                        className="min-h-[72px] rounded-2xl border border-[#E7E0D7] bg-white px-4 py-3 text-left text-sm font-semibold leading-snug text-stone-700 transition-colors duration-200 hover:border-forest-300 hover:bg-forest-50 hover:text-forest-800 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500"
                       >
                         {q}
                       </button>
@@ -215,7 +247,7 @@ function GuideContent() {
                           setInput(q);
                           inputRef.current?.focus();
                         }}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-white text-stone-600 border border-stone-200 hover:border-forest-300 hover:text-forest-700 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                        className="min-h-[72px] rounded-2xl border border-[#E7E0D7] bg-white px-4 py-3 text-left text-sm font-semibold leading-snug text-stone-700 transition-colors duration-200 hover:border-forest-300 hover:bg-forest-50 hover:text-forest-800 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500"
                       >
                         {q}
                       </button>
@@ -274,7 +306,7 @@ function GuideContent() {
         </div>
 
         {/* Input */}
-        <form onSubmit={sendMessage} className="p-4 pt-2">
+        <form onSubmit={sendMessage} className="border-t border-[#E7E0D7] bg-white p-4">
           <div className="relative">
             <input
               ref={inputRef}

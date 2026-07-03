@@ -29,7 +29,7 @@ interface PlanData {
   created_at: string;
 }
 
-const cardShadow = "0 1px 4px rgba(20,60,35,0.04)";
+const cardShadow = "0 10px 28px rgba(43, 58, 42, 0.07), 0 1px 2px rgba(43, 58, 42, 0.05)";
 
 const priorityDot: Record<string, string> = {
   high: "bg-summit",
@@ -64,6 +64,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
   }, [mountainId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchPlan();
   }, [fetchPlan]);
 
@@ -100,14 +101,25 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
   }
 
   const inputClasses =
-    "w-full bg-stone-50 rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-stone-200 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
+    "w-full bg-white rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-[#E7E0D7] focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
 
   return (
-    <div className="mt-10 space-y-6">
+    <section className="mt-10 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-stone-800">Weekly Plan</h2>
+      <div className="flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: cardShadow }}>
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+              <rect x="5" y="6" width="16" height="15" rx="3" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.5" />
+              <path d="M9 11H17M9 15H14" stroke="#1E5235" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M19 3.5L20 6L22.5 7L20 8L19 10.5L18 8L15.5 7L18 6L19 3.5Z" fill="#E7B85B" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
+              Planning Agent
+            </p>
+            <h2 className="mt-1 text-2xl font-bold text-forest-950">Weekly Plan</h2>
           {plan && (
             <p className="text-xs text-stone-400 mt-0.5">
               Week of{" "}
@@ -117,11 +129,17 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
               )}
             </p>
           )}
+          {!plan && (
+            <p className="mt-1 text-sm text-stone-500">
+              Turn your current camp into a focused route for the week.
+            </p>
+          )}
+          </div>
         </div>
         <button
           onClick={() => (plan && !showForm ? setShowForm(true) : generatePlan())}
           disabled={generating}
-          className="text-sm px-4 py-2 rounded-xl bg-white text-stone-700 font-medium border border-stone-200 hover:bg-forest-50 hover:border-forest-300 hover:text-forest-800 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+          className="text-sm px-4 py-2 rounded-xl bg-white text-forest-800 font-semibold border border-forest-200 hover:bg-forest-50 hover:border-forest-300 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
           style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
           type="button"
         >
@@ -141,7 +159,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
       {/* Form */}
       {(showForm || !plan) && !generating && (
         <div
-          className="bg-stone-50 rounded-2xl p-5 border border-stone-200 space-y-3"
+          className="rounded-3xl border border-[#E7E0D7] bg-white p-5 space-y-3"
           style={{ boxShadow: cardShadow }}
         >
           <div>
@@ -194,7 +212,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
           {/* Priority + Next Action */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div
-              className="bg-forest-50 rounded-2xl p-5 border border-forest-200"
+              className="rounded-2xl border border-forest-200 bg-forest-50 p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-forest-600 uppercase tracking-wide mb-2">
@@ -206,7 +224,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
             </div>
 
             <div
-              className="bg-stone-50 rounded-2xl p-5 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
@@ -222,7 +240,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
           {plan.plan.schedule && plan.plan.schedule.length > 0 && (
             <div>
               <div className="flex items-center gap-3 mb-3">
-                <h3 className="text-sm font-semibold text-stone-700">
+                <h3 className="text-xl font-bold text-forest-950">
                   Schedule
                 </h3>
                 {plan.plan.focus_area && (
@@ -250,7 +268,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
                   return (
                     <div
                       key={day.day}
-                      className={`rounded-2xl p-4 border ${isRest ? "bg-stone-50/50 border-stone-100" : "bg-stone-50 border-stone-200"}`}
+                      className={`rounded-2xl p-4 border ${isRest ? "bg-[#FBF8F1] border-[#E7E0D7]" : "bg-white border-[#E7E0D7]"}`}
                       style={{ boxShadow: isRest ? "none" : cardShadow }}
                     >
                       <p
@@ -291,7 +309,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
           {/* Strategy Notes */}
           {plan.strategy_notes && (
             <div
-              className="bg-stone-50 rounded-2xl p-5 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
@@ -306,7 +324,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
           {/* Adjustments */}
           {plan.adjustments && plan.adjustments.length > 0 && (
             <div
-              className="bg-stone-50 rounded-2xl p-5 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
@@ -326,6 +344,6 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
           )}
         </>
       )}
-    </div>
+    </section>
   );
 }

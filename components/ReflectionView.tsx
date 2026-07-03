@@ -28,7 +28,7 @@ interface PastReflection {
   created_at: string;
 }
 
-const cardShadow = "0 1px 4px rgba(20,60,35,0.04)";
+const cardShadow = "0 10px 28px rgba(43, 58, 42, 0.07), 0 1px 2px rgba(43, 58, 42, 0.05)";
 
 export default function ReflectionView({
   mountainId,
@@ -61,6 +61,7 @@ export default function ReflectionView({
   }, [mountainId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchReflections();
   }, [fetchReflections]);
 
@@ -107,7 +108,7 @@ export default function ReflectionView({
   }
 
   const inputClasses =
-    "w-full bg-stone-50 rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-stone-200 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
+    "w-full bg-white rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-[#E7E0D7] focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
 
   if (loading) {
     return (
@@ -119,15 +120,32 @@ export default function ReflectionView({
   }
 
   return (
-    <div className="mt-10 space-y-6">
+    <section className="mt-10 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-stone-800">
-          Weekly Reflection
-        </h2>
+      <div className="flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: cardShadow }}>
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+              <path d="M7 6.5H19V19.5H7V6.5Z" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.5" strokeLinejoin="round" />
+              <path d="M10 11H16M10 14.5H14" stroke="#1E5235" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M19 3.5L20 6L22.5 7L20 8L19 10.5L18 8L15.5 7L18 6L19 3.5Z" fill="#E7B85B" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
+              Reflection Agent
+            </p>
+            <h2 className="mt-1 text-2xl font-bold text-forest-950">
+              Weekly Reflection
+            </h2>
+            <p className="mt-1 text-sm text-stone-500">
+              Turn the week into lessons for the next stretch of the climb.
+            </p>
+          </div>
+        </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="text-sm px-4 py-2 rounded-xl bg-white text-stone-700 font-medium border border-stone-200 hover:bg-forest-50 hover:border-forest-300 hover:text-forest-800 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+          className="text-sm px-4 py-2 rounded-xl bg-white text-forest-800 font-semibold border border-forest-200 hover:bg-forest-50 hover:border-forest-300 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
           style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
           type="button"
         >
@@ -138,7 +156,7 @@ export default function ReflectionView({
       {/* Reflection Form */}
       {showForm && (
         <div
-          className="bg-stone-50 rounded-2xl p-5 border border-stone-200 space-y-4"
+          className="rounded-3xl border border-[#E7E0D7] bg-white p-5 space-y-4"
           style={{ boxShadow: cardShadow }}
         >
           <p className="text-sm text-stone-600 leading-relaxed">
@@ -267,7 +285,7 @@ export default function ReflectionView({
         <div className="space-y-4">
           {/* Summary */}
           <div
-            className="bg-stone-50 rounded-2xl p-5 border border-stone-200"
+            className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
             style={{ boxShadow: cardShadow }}
           >
             <p className="text-xs font-medium text-stone-400 mb-0.5">
@@ -332,7 +350,7 @@ export default function ReflectionView({
           {/* Lessons Learned */}
           {reflection.lessons_learned.length > 0 && (
             <div
-              className="bg-stone-50 rounded-2xl p-5 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-3">
@@ -361,7 +379,7 @@ export default function ReflectionView({
                 {reflection.blockers.map((b, i) => (
                   <div
                     key={i}
-                    className="bg-stone-50 rounded-2xl p-4 border border-stone-200"
+                    className="rounded-2xl border border-[#E7E0D7] bg-white p-4"
                     style={{ boxShadow: cardShadow }}
                   >
                     <p className="text-sm font-semibold text-stone-800">
@@ -391,7 +409,7 @@ export default function ReflectionView({
           {/* Suggested Adjustments */}
           {reflection.adjustments.length > 0 && (
             <div
-              className="bg-stone-50 rounded-2xl p-5 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-3">
@@ -414,7 +432,7 @@ export default function ReflectionView({
           {/* Motivation Insight */}
           {reflection.motivation_insight && (
             <div
-              className="bg-stone-50 rounded-2xl p-5 border border-stone-200"
+              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
@@ -438,7 +456,8 @@ export default function ReflectionView({
             {pastReflections.map((r) => (
               <div
                 key={r.id}
-                className="bg-stone-50 rounded-xl px-4 py-3 border border-stone-100"
+                className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-3"
+                style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.04)" }}
               >
                 <p className="text-xs text-stone-400 mb-1">
                   Week of{" "}
@@ -459,15 +478,24 @@ export default function ReflectionView({
       {/* Empty state */}
       {!reflection && !showForm && (
         <div
-          className="bg-stone-50 rounded-2xl p-8 border border-stone-200 text-center"
+          className="rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] p-8 text-center"
           style={{ boxShadow: cardShadow }}
         >
-          <p className="text-sm text-stone-500">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+              <path d="M7 6.5H19V19.5H7V6.5Z" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.5" strokeLinejoin="round" />
+              <path d="M10 11H16M10 14.5H14" stroke="#1E5235" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </div>
+          <p className="text-base font-semibold text-stone-700">
+            No reflection yet
+          </p>
+          <p className="mt-1 text-sm text-stone-500">
             No reflections yet. Hit &ldquo;Reflect&rdquo; to review your week
             and get AI insights on what&rsquo;s working.
           </p>
         </div>
       )}
-    </div>
+    </section>
   );
 }

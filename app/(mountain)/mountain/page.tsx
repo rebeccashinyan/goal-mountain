@@ -48,6 +48,7 @@ function MountainContent() {
   }, [id]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchMountain();
   }, [fetchMountain]);
 
@@ -70,22 +71,57 @@ function MountainContent() {
     );
   }
 
+  const progress =
+    mountain.milestones.length === 0
+      ? 0
+      : Math.round(((mountain.current_milestone_index + 1) / mountain.milestones.length) * 100);
+  const currentMilestone = mountain.milestones[mountain.current_milestone_index];
+
   return (
-    <div className="max-w-[960px] mx-auto mt-2 pb-10">
-      <div className="flex justify-end mb-2">
+    <div className="max-w-[1180px] mx-auto mt-8 pb-10">
+      <div className="mb-6 flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: "0 10px 28px rgba(43, 58, 42, 0.08), 0 1px 2px rgba(43, 58, 42, 0.06)" }}>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
+            Mountain Overview
+          </p>
+          <h2 className="mt-2 text-3xl font-bold text-forest-950">
+            {mountain.goal}
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm text-stone-500">
+            Summit: {mountain.summit}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-forest-700 ring-1 ring-forest-100">
+              {progress}% to summit
+            </span>
+            {currentMilestone && (
+              <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 ring-1 ring-stone-200">
+                Current camp: {currentMilestone.name}
+              </span>
+            )}
+          </div>
+        </div>
         <Link
           href={`/guide?mountain_id=${mountain.id}`}
-          className="text-sm px-4 py-2 rounded-xl bg-white text-stone-700 font-medium border border-stone-200 hover:bg-forest-50 hover:border-forest-300 hover:text-forest-800 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+          className="inline-flex w-fit items-center gap-2 rounded-xl border border-forest-200 bg-white px-5 py-3 text-sm font-semibold text-forest-800 transition-colors duration-200 hover:bg-forest-50 hover:border-forest-300 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500"
           style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
         >
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-forest-50 text-forest-700">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M7 1.5L8.5 5.5L12.5 7L8.5 8.5L7 12.5L5.5 8.5L1.5 7L5.5 5.5L7 1.5Z" fill="currentColor" />
+            </svg>
+          </span>
           Discuss With AI
         </Link>
       </div>
-      <MountainViz
-        milestones={mountain.milestones}
-        summit={mountain.summit}
-        currentMilestoneIndex={mountain.current_milestone_index}
-      />
+
+      <div className="rounded-3xl border border-[#E7E0D7] bg-white p-3 md:p-5" style={{ boxShadow: "0 10px 28px rgba(43, 58, 42, 0.07)" }}>
+        <MountainViz
+          milestones={mountain.milestones}
+          summit={mountain.summit}
+          currentMilestoneIndex={mountain.current_milestone_index}
+        />
+      </div>
       <PlanView mountainId={mountain.id} />
       <ProgressTracker
         mountainId={mountain.id}

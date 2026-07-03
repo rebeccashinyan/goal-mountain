@@ -37,7 +37,7 @@ Return a JSON object:
   "goal_data": null | {
     "goal": "the refined goal",
     "current_level": "their current level",
-    "target_date": "target date or null",
+    "target_date": "YYYY-MM-DD format or null",
     "constraints": "constraints or null"
   }
 }

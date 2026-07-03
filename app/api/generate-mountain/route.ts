@@ -98,6 +98,18 @@ Rules:
     })
   );
 
+  let normalizedDate: string | null = null;
+  if (target_date) {
+    const d = target_date.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      normalizedDate = d;
+    } else if (/^\d{4}-\d{2}$/.test(d)) {
+      normalizedDate = `${d}-01`;
+    } else if (/^\d{4}$/.test(d)) {
+      normalizedDate = `${d}-01-01`;
+    }
+  }
+
   const { data, error } = await supabase
     .from("mountains")
     .insert({
@@ -108,7 +120,7 @@ Rules:
       current_milestone_index: 0,
       milestones,
       running_level: current_level || null,
-      race_date: target_date || null,
+      race_date: normalizedDate,
       constraints: constraints || null,
     })
     .select()

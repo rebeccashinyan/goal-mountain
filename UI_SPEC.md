@@ -268,26 +268,38 @@ app/
 
 ### AI Guide (`/guide`)
 
-**Purpose:** Context-aware conversational AI coach.
+**Purpose:** Context-aware conversational AI coach with persistent chat history.
 
-**Layout:** Full-height chat interface (`height: calc(100vh - 100px)`)
+**Layout:** Stacked — header card on top, two-column sidebar+chat below. Total height: `calc(100vh - 80px)`.
 
-**Header card:**
-- Compass icon, "AI Compass Guide" eyebrow, title, description
-- Context selector dropdown (right): "All Mountains" or specific mountain goal
+**Header card** (matches other page header cards: `rounded-3xl bg-[#FBF8F1] px-6 py-5`):
+- Compass icon (SVG, h-12 w-12, `bg-white rounded-2xl border border-[#D0ECDD]`)
+- "AI COMPASS GUIDE" eyebrow (`text-xs font-semibold uppercase tracking-[0.18em] text-forest-600`)
+- "Ask for your next best move" heading (`text-3xl font-bold text-forest-950`)
+- Subtitle: `text-sm text-stone-500`
+- Context selector dropdown (right, `text-xs uppercase` "CONTEXT" label): "All Mountains" or specific mountain goal — controls which mountain new chats are scoped to
 
-**Chat area:**
-- Background: `bg-[#FBF8F1]`
-- Empty state: large icon + context label + 3 suggested question chips
-  - All Mountains mode: "What should I prioritize?", "Am I taking on too much?", "Which mountain needs attention?"
-  - Single Mountain mode: "What should I do next?", "Why am I stuck?", "How can I reach my summit faster?"
-- Messages: user bubbles right-aligned (forest-700 bg), AI bubbles left-aligned (white bg)
-- Sending indicator: 3 bouncing dots
+**Sidebar (240px, bg-[#FAFAF8], border-r):**
+- "New Chat" button (+ icon, creates a `user_initiated` chat in Supabase)
+- Search input (filters both sections by title)
+- **"Messages from AI" section** — always visible; shows `ai_proactive` chats with orange unread dot (`#E07A6E`) and last_message preview. If empty: "No messages yet — the AI will reach out if it detects you're off track."
+- **"Chats" section** — always visible; shows `user_initiated` chats with title + last_message preview. If empty: "No chats yet. Click 'New Chat' to start."
+- Selected chat highlighted with white bg + shadow
 
-**Input bar:**
-- Full-width text input (rounded-2xl)
-- Send button (forest-700, rounded-xl) embedded right side
-- Placeholder adapts to selected context
+**Chat panel (flex-1, bg-white):**
+- **Chat header** (border-b): selected chat title + small mountain name pill (forest-50 bg)
+- **Messages area** (bg-[#FAFAF8]):
+  - Empty state: 3 starter question chips
+  - User bubbles: right-aligned, forest-700 bg, white text
+  - AI bubbles: left-aligned, white bg, stone-800 text
+  - **Suggested reply chips**: render below the most recent AI message as rounded-full pills (forest-700 border/text); clicking auto-sends
+  - **Advance milestone card**: green (forest-50 bg, forest-200 border) with next milestone name + "Confirm" button
+  - **Plan proposal card**: rounded-2xl card showing day-by-day schedule with priority dots, focus area, "Start here" action; "Looks good ✓" / "Make changes" buttons
+  - Sending indicator: 3 bouncing dots (stone-300)
+- **Input bar**: full-width rounded-2xl text input; send button (forest-700, rounded-xl) embedded right side; Enter to submit
+- **Empty state** (no chat selected): centered icon + heading + 3 starter chips + "New Chat" button
+
+**Proactive AI messages:** On page load when `mountain_id` param is present, page calls `POST /api/proactive`. If inactivity conditions are met, a new chat appears in "Messages from AI" with orange unread dot.
 
 ---
 

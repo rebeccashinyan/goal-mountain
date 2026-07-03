@@ -429,6 +429,8 @@ The user should feel like they have one AI companion, not multiple AI chatbots. 
 - `progress_logs` — Progress Tracking Agent logs
 - `reflections` — Reflection Agent weekly reviews
 - `memory` — Memory Agent long-term storage
+- `guide_chats` — persistent Guide Agent conversations (user-initiated + AI-proactive)
+- `guide_messages` — messages within a guide chat
 
 ## Recent Updates
 
@@ -583,3 +585,30 @@ The static form (goal, experience, target date, constraints fields) was replaced
 ### Dashboard: Delete Mountain (2026-07-03)
 
 Each mountain card on the dashboard has a trash icon button. Clicking shows a confirm dialog, then calls `DELETE /api/mountains/[id]`.
+
+---
+
+### AI Guide: Sidebar Layout + Persistent Chat History (2026-07-03)
+
+The AI Guide page was completely redesigned with a two-column sidebar layout and persistent chat storage in Supabase.
+
+**Layout:**
+- Left sidebar (240px): "New Chat" button, search input, "Messages from AI" section (AI-proactive chats with orange unread dot), "Chats" section (user-initiated history)
+- Right: selected chat conversation with messages, suggested reply chips, action cards (advance milestone, plan proposal), typing indicator
+
+**Persistent chat architecture (new tables):**
+- `guide_chats` — one row per conversation: `mountain_id`, `title`, `type` (`user_initiated` | `ai_proactive`), `unread`, `last_message`
+- `guide_messages` — one row per message: `chat_id`, `role`, `content`, `suggested_replies` (jsonb), `actions` (jsonb)
+
+**New API routes:**
+- `GET /api/chats` — list all chats, optionally filtered by mountain_id
+- `POST /api/chats` — create a new chat
+- `GET /api/chats/[id]/messages` — fetch all messages in a chat
+- `POST /api/chats/[id]/messages` — save user message → call OpenAI (with full context + conversation history) → execute server-side actions → save AI message → return `{ reply, suggested_replies, actions }`
+- `POST /api/proactive` — check inactivity conditions (daysSinceLastLog ≥ 3, missedCount ≥ 2, zero activities this week), generate AI check-in via GPT, create `ai_proactive` chat with `unread: true`. Deduped per mountain per day.
+
+**Proactive AI messages:** On page load (when `mountain_id` param present), frontend calls `/api/proactive`. If conditions are met, a new "Messages from AI" entry appears in the sidebar with an orange unread dot. The AI writes a contextual check-in message with suggested replies.
+
+**All mountains support:** New Chat from the guide page can be scoped to a specific mountain (via the header mountain switcher) or left unscoped for cross-mountain strategy discussions.
+
+**ProgressTracker log types:** Simplified from 5 → 2: `activity` ("Did it") and `missed_activity` ("Missed"). No energy/effort sliders, no analysis output, no activity list. Auto-collapses 1.8s after logging.

@@ -98,7 +98,7 @@ Raw activity log entries from the Progress Tracking Agent. Append-only — never
 |--------|------|---------|-------------|
 | `id` | uuid PK | gen_random_uuid() | — |
 | `mountain_id` | uuid FK → mountains.id ON DELETE CASCADE | — | — |
-| `log_type` | text NOT NULL | — | One of: `activity`, `completed_task`, `missed_activity`, `milestone_reached`, `rest_day` |
+| `log_type` | text NOT NULL | — | One of: `activity`, `missed_activity` |
 | `data` | jsonb | `{}` | Freeform log payload (effort level, description, duration, etc.) |
 | `created_at` | timestamptz | now() | — |
 
@@ -164,6 +164,47 @@ Long-term personalization store for the Memory Agent. Written automatically by t
 
 ---
 
+### `guide_chats`
+
+Persistent Guide Agent conversations. One row per conversation session (user-initiated or AI-proactive).
+
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| `id` | uuid PK | gen_random_uuid() | — |
+| `mountain_id` | uuid FK → mountains.id ON DELETE CASCADE | null | null = All Mountains context |
+| `title` | text NOT NULL | — | Short label shown in the sidebar |
+| `type` | text | `'user_initiated'` | `'user_initiated'` or `'ai_proactive'` |
+| `unread` | boolean | `false` | True for new AI-proactive chats until opened |
+| `last_message` | text | null | Preview shown in sidebar (first 100 chars of latest message) |
+| `created_at` | timestamptz | now() | — |
+| `updated_at` | timestamptz | now() | Updated when a new message is sent |
+
+**Notes:**
+- AI-proactive chats are created by `POST /api/proactive` when inactivity conditions are met (daysSinceLastLog ≥ 3, missedCount ≥ 2, or zero activities this week). Deduped per mountain per day.
+- `mountain_id` is null for "All Mountains" context chats.
+
+---
+
+### `guide_messages`
+
+Individual messages within a guide chat.
+
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| `id` | uuid PK | gen_random_uuid() | — |
+| `chat_id` | uuid FK → guide_chats.id ON DELETE CASCADE | — | Parent chat |
+| `role` | text NOT NULL | — | `'user'` or `'ai'` |
+| `content` | text NOT NULL | — | Message text |
+| `suggested_replies` | jsonb | `[]` | Array of up to 3 short reply strings (AI messages only) |
+| `actions` | jsonb | `[]` | Client-side actions returned by AI: `advance_milestone`, `propose_plan` |
+| `created_at` | timestamptz | now() | — |
+
+**Notes:**
+- Server-side actions (`store_memory`, `log_progress`) are executed inside the route before saving — they do not appear in `actions`.
+- `suggested_replies` are rendered as clickable chips below the AI message in the sidebar chat.
+
+---
+
 ## Relationships
 
 ```
@@ -172,7 +213,9 @@ mountains (1)
   ├── (many) weekly_plans     → mountain_id FK, cascade delete
   ├── (many) progress_logs    → mountain_id FK, cascade delete
   ├── (many) reflections      → mountain_id FK, cascade delete
-  └── (many) memory           → mountain_id FK, cascade delete
+  ├── (many) memory           → mountain_id FK, cascade delete
+  └── (many) guide_chats      → mountain_id FK, cascade delete (nullable)
+        └── (many) guide_messages → chat_id FK, cascade delete
 ```
 
 All child rows are deleted when a mountain is deleted (ON DELETE CASCADE).
@@ -203,6 +246,11 @@ All child rows are deleted when a mountain is deleted (ON DELETE CASCADE).
 | POST | `/api/guide` | — | mountains, memory, weekly_plans, reflections, progress_logs |
 | POST | `/api/insights` | — | mountains, memory, reflections, progress_logs |
 | POST | `/api/create-mountain-chat` | — | — |
+| GET | `/api/chats` | — | guide_chats |
+| POST | `/api/chats` | guide_chats | — |
+| GET | `/api/chats/[id]/messages` | — | guide_messages |
+| POST | `/api/chats/[id]/messages` | guide_messages, memory, progress_logs | guide_chats, guide_messages, mountains, memory, weekly_plans, reflections, progress_logs |
+| POST | `/api/proactive` | guide_chats, guide_messages | mountains, progress_logs, weekly_plans |
 
 ---
 

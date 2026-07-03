@@ -110,6 +110,41 @@ create policy "Allow all operations" on memory
   for all using (true) with check (true);
 
 -- ============================================================
+-- 7. Guide Chats (Guide Agent — persistent conversations)
+-- ============================================================
+create table guide_chats (
+  id uuid primary key default gen_random_uuid(),
+  mountain_id uuid references mountains(id) on delete cascade,
+  title text not null,
+  type text not null default 'user_initiated', -- 'user_initiated' | 'ai_proactive'
+  unread boolean default false,
+  last_message text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table guide_chats enable row level security;
+create policy "Allow all operations" on guide_chats
+  for all using (true) with check (true);
+
+-- ============================================================
+-- 8. Guide Messages (Guide Agent — messages within a chat)
+-- ============================================================
+create table guide_messages (
+  id uuid primary key default gen_random_uuid(),
+  chat_id uuid references guide_chats(id) on delete cascade,
+  role text not null, -- 'user' | 'ai'
+  content text not null,
+  suggested_replies jsonb default '[]',
+  actions jsonb default '[]',
+  created_at timestamptz default now()
+);
+
+alter table guide_messages enable row level security;
+create policy "Allow all operations" on guide_messages
+  for all using (true) with check (true);
+
+-- ============================================================
 -- Migration from old schema (if mountains table already exists)
 -- ============================================================
 -- Run these ALTER statements instead of creating fresh:

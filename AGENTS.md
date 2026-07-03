@@ -343,28 +343,32 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 ## 8. Guide Agent
 
-**Route:** `POST /api/guide`
+**Routes:**
+- `GET /api/chats` — list all guide chats (optionally filter by `?mountain_id=uuid`)
+- `POST /api/chats` — create a new guide chat (`{ mountain_id, title, type }`)
+- `GET /api/chats/[id]/messages` — fetch all messages in a chat
+- `POST /api/chats/[id]/messages` — send a message, get AI reply with actions
+- `POST /api/proactive` — detect inactivity, create AI-proactive chat if conditions met
 
-**Purpose:** The single AI companion the user converses with. Context switches between two modes based on whether a `mountain_id` is provided. Can take actions during conversation — storing memories, logging progress, advancing milestones, and proposing plan changes.
+**Purpose:** The single AI companion the user converses with. Conversations are persisted in Supabase (`guide_chats` + `guide_messages`). Context switches between two modes based on the chat's `mountain_id`.
 
-**Input:**
+**Chat architecture:**
+- Each conversation is a `guide_chat` row. Messages are `guide_messages` rows.
+- `type: "user_initiated"` — started by user via "New Chat"
+- `type: "ai_proactive"` — created automatically by `/api/proactive` when inactivity is detected; shows with orange unread dot in sidebar
+
+**POST /api/chats/[id]/messages input:**
 ```json
-{
-  "message": "user's message",
-  "mountain_id": "uuid or 'all'",
-  "conversation_history": [{ "role": "user|assistant", "content": "..." }],
-  "initial_context": "optional — passed from Insights page when clicking 'Discuss With AI'"
-}
+{ "content": "user's message", "initial_context": "optional — from Insights page" }
 ```
 
-**All Mountains mode** (no mountain_id or `"all"`):
+**All Mountains mode** (chat has no `mountain_id`):
 - Loads all mountains + cross-mountain memories
 - Can discuss prioritization, overcommitment, life strategy
-- Only `store_memory` action available (no single mountain to modify)
+- Only `store_memory` action available
 
-**Single Mountain mode** (mountain_id provided):
-- Loads full mountain data, current plan, latest reflection, recent logs, and memories
-- Coaches on the specific mountain: what to do next, why stuck, how to accelerate
+**Single Mountain mode** (chat has `mountain_id`):
+- Loads full mountain data, current plan, latest reflection, recent logs, memories
 - All 4 action types available
 
 **Output:**
@@ -385,18 +389,23 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 | `advance_milestone` | Client-side (requires confirm) | User explicitly says they completed the current stage |
 | `propose_plan` | Client-side (fetches plan, shows card) | User wants to adjust their schedule or pace |
 
-**Server-side actions** (`store_memory`, `log_progress`) are executed inside the route before returning — no round-trip needed. Memories are written with `source: "guide"` in metadata.
+**Server-side actions** (`store_memory`, `log_progress`) are executed inside the messages route before returning — no round-trip needed. Memories written with `source: "guide"` in metadata.
 
-**Client-side actions** are returned in the `actions` array for the frontend to handle:
-- `advance_milestone` → returns `nextMilestoneName`, rendered as a green confirmation card; on confirm, calls `PATCH /api/mountains/[id]` to mark milestone complete and advance index
-- `propose_plan` → returns `user_constraints` and `available_time`; frontend calls `POST /api/plan` with those values, renders a structured plan card (schedule, priority dots, next action); user clicks "Looks good ✓" or "Make changes"
+**Client-side actions** are returned in the `actions` array:
+- `advance_milestone` → returns `nextMilestoneName`, rendered as green confirmation card; on confirm calls `PATCH /api/mountains/[id]`
+- `propose_plan` → returns `user_constraints` and `available_time`; frontend calls `POST /api/plan`, renders plan card; "Looks good ✓" confirms, "Make changes" pre-fills input
 
-**DB reads:** `mountains`, `memory`, `weekly_plans`, `reflections`, `progress_logs`  
-**DB writes:** `memory` (store_memory), `progress_logs` (log_progress) — executed server-side
+**Proactive message conditions** (`POST /api/proactive`):
+- `daysSinceLastLog >= 3` OR `missedCount >= 2` (in last 14 logs) OR `recentActivityCount == 0` (this week)
+- Deduped: only one proactive chat created per mountain per day
+- Creates a `guide_chats` row (type: `ai_proactive`, unread: true) + initial AI message
+
+**DB reads:** `mountains`, `memory`, `weekly_plans`, `reflections`, `progress_logs`, `guide_chats`, `guide_messages`  
+**DB writes:** `guide_chats`, `guide_messages`, `memory` (store_memory), `progress_logs` (log_progress)
 
 **Navigation flows:**
-- Dashboard → AI Guide tab → All Mountains mode
-- Mountain detail → "Discuss With AI" button → Single Mountain mode with `mountain_id` in URL
+- Dashboard → AI Guide tab → All Mountains mode (no mountain_id)
+- Mountain detail → "Discuss With AI" button → Single Mountain mode (`mountain_id` in URL)
 - Insights page → "Discuss With AI" link → Single Mountain mode with `initial_context` prefilled
 
 ---
@@ -445,7 +454,8 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 | Progress Tracking | mountains, progress_logs | progress_logs, mountains |
 | Reflection | mountains, reflections, progress_logs, memory | reflections, memory |
 | Memory | — | memory |
-| Guide | mountains, memory, weekly_plans, reflections, progress_logs | memory, progress_logs |
+| Guide | mountains, memory, weekly_plans, reflections, progress_logs, guide_chats, guide_messages | guide_chats, guide_messages, memory, progress_logs |
+| Proactive | mountains, progress_logs, weekly_plans | guide_chats, guide_messages |
 | Strategic Intelligence | mountains, memory, reflections, progress_logs | — |
 
 ---

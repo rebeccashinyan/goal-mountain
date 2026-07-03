@@ -468,3 +468,42 @@ The mountain Overview page was restructured based on the principle that the Moun
 5. **Weekly Reflection** (right column, compact) — last reflection date + 2-line summary, single "Open Reflection" / "Start Reflection" button linking to Insights
 
 Design principle: reflection is not the first thing users need every time — it's an entry point, not a primary section.
+
+---
+
+### "About Your Plan" Modal: Post-Generation Summary (2026-07-03)
+
+After the Research + Generate flow completes, instead of immediately navigating to the mountain, the `CreateMountainModal` now shows an "About Your Plan" overlay inside the same modal.
+
+**What it shows:**
+1. **What the Research Agent found** — Proven stages (numbered, with typical duration), skills to build (tag chips), and top 3 pitfalls to watch out for
+2. **Your Mountain** — Full ordered milestone list with camps highlighted (green bg, "Camp" badge) and checkpoints (white bg), summit shown with gold star
+3. **Summary line** — "X major camps · Y checkpoints · grounded in real-world research"
+
+**CTA:**
+- "Start Climbing →" — navigates to `/mountain?id=${mountainId}` via `useRouter`, closes modal
+- "Close" — dismisses modal without navigating
+
+**Data flow:**
+- `onCreated()` is called immediately after generation (before showing the plan) so the parent list refreshes in the background
+- `researchData` and `mountainResult` are stored in component state during generation
+- Research findings shown in "About Your Plan" come from the pre-mountain research call (first step of two-step generation)
+- The same research data was already saved to the `research` DB table inside `/api/generate-mountain`, so the Insights page automatically shows it via the existing GET endpoint
+
+---
+
+### Create Mountain: Conversational Chat Flow (2026-07-03)
+
+The static form (goal, experience, target date, constraints fields) was replaced with a conversational AI modal.
+
+**New API:** `POST /api/create-mountain-chat` — takes `conversation_history`, returns `{ reply, status: "gathering"|"confirming"|"ready", goal_data }`. The AI asks one question at a time, refines vague goals, and only signals ready when it has enough context.
+
+**Modal:** `CreateMountainModal` is now a chat UI. When AI returns `status: "ready"`, generation triggers automatically. A "Generate Mountain" button appears at `status: "confirming"` for manual override.
+
+**Date normalization:** AI may return partial dates (e.g. `"2028-05"`). The generate route normalizes to full ISO before Supabase insert — `YYYY-MM` → `YYYY-MM-01`, `YYYY` → `YYYY-01-01`.
+
+---
+
+### Dashboard: Delete Mountain (2026-07-03)
+
+Each mountain card on the dashboard has a trash icon button. Clicking shows a confirm dialog, then calls `DELETE /api/mountains/[id]`.

@@ -63,6 +63,8 @@ Check: spacing/padding, font size/weight/line-height, colors (exact hex), alignm
 
 ## Updates 
 If there's any updates for the project update to Project.md
+After updating Project.md, reply with:
+Updated in Project.md
 
 ## Mandatory Response Suffix
 Every time you finish a response, you must end with this exact line:

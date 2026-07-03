@@ -136,5 +136,23 @@ Rules:
     return Response.json({ error: error.message }, { status: 500 });
   }
 
+  // Save pre-mountain research to the research table so Insights can display it
+  if (research_context && data?.id) {
+    const rc = typeof research_context === "string"
+      ? JSON.parse(research_context)
+      : research_context;
+    await supabase.from("research").insert({
+      mountain_id: data.id,
+      query: `${mountain.goal} — initial research`,
+      insights: rc.insights || [],
+      resources: rc.best_resources?.map((r: { name: string; type: string; why: string }) => ({
+        name: r.name,
+        type: r.type,
+        reason: r.why,
+      })) || [],
+      skill_gaps: rc.skill_gaps || [],
+    });
+  }
+
   return Response.json(data);
 }

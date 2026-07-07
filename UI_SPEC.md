@@ -319,7 +319,18 @@ Small SVG mountain visualization used on dashboard cards. Props: `progress`, `to
 
 ### `MountainViz`
 
-Full-size SVG mountain visualization used on the Overview page. Props: `milestones`, `summit`, `currentMilestoneIndex`.
+Full-size SVG "Expedition map" visualization used on the Overview page. Props: `milestones`, `summit`, `currentMilestoneIndex`.
+
+Design (blue expedition-map style):
+- Light blue-gray card background (`#F7F9FC`), rounded corners
+- Top-left: "Expedition map" heading (bold, near-black) + 2-line gray subtitle ("Climb one camp at a time." / "Your guide updates the route as you learn.")
+- Right side: light-blue outlined mountain silhouette with scenery (foothill ridge lines, pine trees, cloud)
+- Fixed hand-tuned trail in slate blue (`#4A6E96`) traced from the reference art: long gentle approach from the compass, wide switchbacks mid-mountain, near-vertical final climb onto the peak. Milestone nodes are placed along the trail by arc length, so the trail shape never distorts regardless of milestone count; the last milestone lands on the final bend below the peak
+- Node states: upcoming = white with blue stroke, current = amber fill (`#E9B24A`) with bold navy label, completed = blue fill with white center dot; completed segments render darker/thicker (`#2E5075`)
+- Labels: thin leader line to a right-aligned short label on the left: `{index+1}. {stage}`, where stage is the milestone name up to the colon (e.g. "4. Camp 2"). Like the reference, labels are skipped where vertical space is tight (< 24px when > 9 milestones) — skipped nodes stay as plain dots; the current milestone is always labeled. Full name + description shown as native tooltip on every node.
+- Start point: compass marker (white circle, amber 4-point star) at base camp
+- Peak: dark flag pole with amber triangle flag + blue bold "summit" label
+- Bottom-left legend: two slate dashes + "Base camp – begin your journey"
 
 ### `PlanView`
 

@@ -13,220 +13,255 @@ interface MountainVizProps {
   currentMilestoneIndex: number;
 }
 
+const PATH_BLUE = "#4A6E96";
+const PATH_DONE = "#2C4E74";
+const SCENERY = "#C5D5E6";
+const SCENERY_SOFT = "#DCE6F0";
+const AMBER = "#E9B24A";
+const INK = "#182233";
+const MUTED = "#66707D";
+const LEADER = "#DDE6EF";
+const ACCENT = "#46698F";
+
+// The route is a fixed, hand-tuned trail traced from the reference art:
+// a long gentle approach, wide switchbacks mid-mountain, near-vertical
+// at the top. Milestone nodes are placed along it by arc length, so the
+// trail keeps its shape no matter how many milestones a mountain has.
+const TRAIL: [number, number][] = [
+  [318, 500], [470, 455], [602, 424], [555, 376], [665, 340],
+  [590, 296], [686, 260], [632, 228], [654, 170],
+];
+const PEAK: [number, number] = [680, 125];
+
+const SEG_LENS = TRAIL.slice(0, -1).map((p, s) =>
+  Math.hypot(TRAIL[s + 1][0] - p[0], TRAIL[s + 1][1] - p[1])
+);
+const TRAIL_LEN = SEG_LENS.reduce((a, b) => a + b, 0);
+
+// Point at arc distance d along the trail
+function trailPoint(d: number): [number, number] {
+  let s = 0;
+  while (s < SEG_LENS.length - 1 && d > SEG_LENS[s]) {
+    d -= SEG_LENS[s];
+    s++;
+  }
+  const f = Math.min(Math.max(d / SEG_LENS[s], 0), 1);
+  return [
+    TRAIL[s][0] + (TRAIL[s + 1][0] - TRAIL[s][0]) * f,
+    TRAIL[s][1] + (TRAIL[s + 1][1] - TRAIL[s][1]) * f,
+  ];
+}
+
+// Path from the trail start up to arc distance d (for the traveled overlay)
+function trailPathTo(dist: number): string {
+  let d = `M ${TRAIL[0][0]} ${TRAIL[0][1]}`;
+  let remaining = dist;
+  for (let s = 0; s < SEG_LENS.length; s++) {
+    if (remaining <= SEG_LENS[s]) {
+      const [cx, cy] = trailPoint(dist);
+      return d + ` L ${cx} ${cy}`;
+    }
+    remaining -= SEG_LENS[s];
+    d += ` L ${TRAIL[s + 1][0]} ${TRAIL[s + 1][1]}`;
+  }
+  return d;
+}
+
+// First node clears the compass; the last lands exactly on the final
+// bend below the peak, like the reference's summit-stage node
+const nodeDist = (i: number, count: number) => (TRAIL_LEN * (i + 1.5)) / (count + 0.5);
+
+function pineTree(x: number, y: number, s: number) {
+  return [
+    `M ${x} ${y - 3 * s} L ${x - s} ${y - s}`,
+    `M ${x} ${y - 3 * s} L ${x + s} ${y - s}`,
+    `M ${x} ${y - 2.1 * s} L ${x - 1.35 * s} ${y}`,
+    `M ${x} ${y - 2.1 * s} L ${x + 1.35 * s} ${y}`,
+    `M ${x} ${y} L ${x} ${y + s * 0.9}`,
+  ].join(" ");
+}
+
 export default function MountainViz({ milestones, summit, currentMilestoneIndex }: MountainVizProps) {
-  const totalSteps = Math.max(milestones.length, 1);
   const viewW = 980;
   const viewH = 620;
-  const baseY = 550;
-  const peakY = 78;
-  const startX = 280;
-  const peakX = 740;
-  const rightX = 930;
+  const n = milestones.length;
+  const dense = n > 9;
+  const completedIdx = Math.max(0, Math.min(currentMilestoneIndex, Math.max(n - 1, 0)));
 
-  const stepH = (baseY - peakY - 40) / totalSteps;
-  const stepW = (peakX - startX) / totalSteps;
+  const nodes = milestones.map((_, i) => trailPoint(nodeDist(i, n)));
 
-  const stairPoints: [number, number][] = [[startX, baseY]];
-  for (let i = 0; i < totalSteps; i++) {
-    const x = startX + stepW * (i + 1);
-    const yBottom = baseY - stepH * i;
-    const yTop = baseY - stepH * (i + 1);
-    stairPoints.push([x, yBottom]);
-    stairPoints.push([x, yTop]);
+  // Like the reference, only label nodes with breathing room — skipped
+  // nodes stay as plain dots (full name in tooltip). The current
+  // milestone is always labeled.
+  const gap = dense ? 24 : 0;
+  const labeled: boolean[] = new Array(n).fill(false);
+  if (n > 0) labeled[completedIdx] = true;
+  let lastLabelY = Infinity;
+  for (let i = 0; i < n; i++) {
+    if (i === completedIdx) {
+      lastLabelY = nodes[i][1];
+      continue;
+    }
+    const y = nodes[i][1];
+    const clearsPrev = lastLabelY - y >= gap;
+    const clearsCurrent = Math.abs(y - nodes[completedIdx][1]) >= gap;
+    if (clearsPrev && clearsCurrent) {
+      labeled[i] = true;
+      lastLabelY = y;
+    }
   }
 
-  const lastStairX = stairPoints[stairPoints.length - 1][0];
-  const lastStairY = stairPoints[stairPoints.length - 1][1];
+  const fullRoute =
+    TRAIL.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ") +
+    ` L ${PEAK[0]} ${PEAK[1]}`;
 
-  const completedIdx = Math.max(0, Math.min(currentMilestoneIndex, totalSteps - 1));
-  const completedStairEnd = Math.min(completedIdx * 2 + 2, stairPoints.length - 1);
-
-  let completedPath = `M ${stairPoints[0][0]} ${stairPoints[0][1]}`;
-  for (let i = 1; i <= completedStairEnd; i++) {
-    completedPath += ` L ${stairPoints[i][0]} ${stairPoints[i][1]}`;
-  }
-  const cEndX = stairPoints[completedStairEnd][0];
-  completedPath += ` L ${cEndX} ${baseY} L ${startX} ${baseY} Z`;
-
-  let outlinePath = `M ${stairPoints[0][0]} ${stairPoints[0][1]}`;
-  for (let i = 1; i < stairPoints.length; i++) {
-    outlinePath += ` L ${stairPoints[i][0]} ${stairPoints[i][1]}`;
-  }
-  outlinePath += ` L ${lastStairX + 20} ${peakY}`;
-  outlinePath += ` L ${rightX} ${baseY}`;
-  outlinePath += ` L ${startX} ${baseY} Z`;
-
-  const starStep = completedIdx;
-  const starX = stairPoints[Math.min(starStep * 2 + 1, stairPoints.length - 1)][0] + stepW * 0.3;
-  const starY = stairPoints[Math.min(starStep * 2 + 2, stairPoints.length - 1)][1] + stepH * 0.4;
-
-  const flagX = lastStairX + 20;
-  const flagY = peakY;
-
-  const milestoneLabels = milestones.map((m, i) => {
-    const labelX = stairPoints[Math.min(i * 2 + 1, stairPoints.length - 1)][0] - 16;
-    const labelY = stairPoints[Math.min(i * 2 + 2, stairPoints.length - 1)][1] - 4;
-    return { ...m, x: labelX, y: labelY, index: i };
-  });
+  const nodeR = dense ? 7 : 8.5;
+  const labelSize = dense ? 13 : 14;
 
   return (
     <div className="w-full overflow-x-auto">
       <svg viewBox={`0 0 ${viewW} ${viewH}`} className="w-full h-auto min-w-[760px]">
         <title>{summit}</title>
-        <defs>
-          <linearGradient id="journeySky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#F2FAF6" />
-            <stop offset="58%" stopColor="#FBF7EF" />
-            <stop offset="100%" stopColor="#FAFAF8" />
-          </linearGradient>
-          <linearGradient id="mountainSurface" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#F3FBF6" />
-            <stop offset="100%" stopColor="#F2EAE0" />
-          </linearGradient>
-          <linearGradient id="completedGrad" x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0%" stopColor="#CFEBDD" />
-            <stop offset="100%" stopColor="#EEF8F2" />
-          </linearGradient>
-          <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
 
-        <rect width={viewW} height={viewH} rx="28" fill="url(#journeySky)" />
-        <path d="M0 468 C118 420 206 445 330 398 C444 354 534 388 646 320 C786 235 868 274 980 216 L980 620 L0 620 Z" fill="#E9F4EE" opacity="0.9" />
-        <path d="M0 520 C128 486 230 512 360 468 C484 426 594 456 724 398 C838 346 910 358 980 322 L980 620 L0 620 Z" fill="#EFE6DA" opacity="0.65" />
+        <rect width={viewW} height={viewH} rx="28" fill="#F6F8FB" />
 
-        <path d={outlinePath} fill="url(#mountainSurface)" stroke="#C7BFB5" strokeWidth="1.5" />
+        {/* Left shoulder — slope line the upper trail climbs across */}
+        <path
+          d="M 660 160 C 610 240 545 300 470 350 C 400 392 300 435 160 483"
+          fill="none"
+          stroke={SCENERY_SOFT}
+          strokeWidth="2"
+        />
 
-        <path d={completedPath} fill="url(#completedGrad)" stroke="none" />
+        {/* Foothill lines, bottom right */}
+        <path d="M 480 620 C 600 565 740 545 980 470" fill="none" stroke={SCENERY_SOFT} strokeWidth="2" />
+        <path d="M 650 620 C 760 590 880 585 980 545" fill="none" stroke={SCENERY_SOFT} strokeWidth="2" />
 
-        {stairPoints.map((pt, i) => {
-          if (i === 0) return null;
-          const prev = stairPoints[i - 1];
-          const isCompleted = i <= completedStairEnd;
+        {/* Mountain silhouette — right ridge from the peak */}
+        <path
+          d={`M ${PEAK[0]} ${PEAK[1]} L 707 173 L 719 159 L 790 300 L 806 283 L 872 430 L 886 415 L 950 585`}
+          fill="none"
+          stroke={SCENERY}
+          strokeWidth="2.2"
+          strokeLinejoin="round"
+        />
+
+        {/* Pine trees — on the face and in the foothills */}
+        {[
+          [775, 400, 6], [806, 420, 8], [838, 395, 6],
+          [706, 520, 8], [748, 548, 10], [792, 522, 8], [828, 560, 9],
+        ].map(([x, y, s], i) => (
+          <path key={i} d={pineTree(x, y, s)} fill="none" stroke={SCENERY} strokeWidth="1.5" strokeLinecap="round" />
+        ))}
+
+        {/* Cloud */}
+        <path
+          d="M 838 230 q 3 -13 17 -12 q 5 -11 18 -8 q 11 -9 21 1 q 13 0 14 13 q 0 7 -9 7 l -52 0 q -9 0 -9 -7 Z"
+          fill="#FFFFFF"
+          stroke={SCENERY}
+          strokeWidth="1.5"
+        />
+
+        {/* Route */}
+        <path d={fullRoute} fill="none" stroke={PATH_BLUE} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+        {n > 0 && (
+          <path
+            d={trailPathTo(nodeDist(completedIdx, n))}
+            fill="none"
+            stroke={PATH_DONE}
+            strokeWidth="4.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+
+        {/* Milestone nodes + labels */}
+        {milestones.map((m, i) => {
+          const [x, y] = nodes[i];
+          const isCurrent = i === completedIdx && !m.completed;
+          const isDone = m.completed || i < completedIdx;
+          const shortName = m.name.split(":")[0].trim();
           return (
-            <line
-              key={i}
-              x1={prev[0]}
-              y1={prev[1]}
-              x2={pt[0]}
-              y2={pt[1]}
-              stroke={isCompleted ? "#1E5235" : "#BFB8AF"}
-              strokeWidth={isCompleted ? "3" : "1.5"}
-              strokeLinecap="round"
-            />
+            <g key={i}>
+              <title>{`${m.name} — ${m.description}`}</title>
+              {labeled[i] && (
+                <>
+                  <line x1={x - 92} y1={y} x2={x - nodeR - 4} y2={y} stroke={LEADER} strokeWidth="1.2" />
+                  <text
+                    x={x - 100}
+                    y={y + labelSize * 0.34}
+                    textAnchor="end"
+                    fill={isCurrent ? "#1F3A5F" : MUTED}
+                    fontSize={labelSize}
+                    fontFamily="var(--font-body), system-ui, sans-serif"
+                    fontWeight={isCurrent ? "700" : "500"}
+                  >
+                    {i + 1}. {shortName}
+                  </text>
+                </>
+              )}
+              <circle
+                cx={x}
+                cy={y}
+                r={nodeR}
+                fill={isDone ? PATH_BLUE : isCurrent ? AMBER : "#FFFFFF"}
+                stroke={isDone || isCurrent ? PATH_BLUE : "#7C99B8"}
+                strokeWidth="2.4"
+              />
+              {isDone && <circle cx={x} cy={y} r={nodeR * 0.34} fill="#FFFFFF" />}
+            </g>
           );
         })}
 
-        <line
-          x1={lastStairX}
-          y1={lastStairY}
-          x2={lastStairX + 20}
-          y2={peakY}
-          stroke="#BFB8AF"
-          strokeWidth="1.5"
+        {/* Compass — base camp start */}
+        <g transform={`translate(${TRAIL[0][0]}, ${TRAIL[0][1]})`}>
+          <circle r="22" fill="#FFFFFF" stroke={PATH_BLUE} strokeWidth="3" />
+          <path d="M 0 -12 L 3.2 -3.2 L 12 0 L 3.2 3.2 L 0 12 L -3.2 3.2 L -12 0 L -3.2 -3.2 Z" fill={AMBER} />
+          <circle r="2.4" fill="#2B3442" />
+        </g>
+
+        {/* Summit flag */}
+        <line x1={PEAK[0]} y1={PEAK[1]} x2={PEAK[0]} y2={PEAK[1] - 62} stroke="#2B3442" strokeWidth="2.5" />
+        <polygon
+          points={`${PEAK[0] + 1},${PEAK[1] - 62} ${PEAK[0] + 36},${PEAK[1] - 52} ${PEAK[0] + 1},${PEAK[1] - 42}`}
+          fill={AMBER}
         />
-        <line
-          x1={lastStairX + 20}
-          y1={peakY}
-          x2={rightX}
-          y2={baseY}
-          stroke="#BFB8AF"
-          strokeWidth="1.5"
-        />
-
-        {milestoneLabels.map((m) => (
-          <g key={m.index}>
-            <circle
-              cx={m.x + 16}
-              cy={m.y + 6}
-              r={m.completed || m.current ? 5 : 4}
-              fill={m.completed ? "#1E5235" : m.current ? "#E7B85B" : "#FFFFFF"}
-              stroke={m.completed || m.current ? "#1E5235" : "#C7BFB5"}
-              strokeWidth="1.2"
-            />
-            <line
-              x1={m.x + 10}
-              y1={m.y + 6}
-              x2={m.x - 18}
-              y2={m.y + 6}
-              stroke="#d6d3d1"
-              strokeWidth="1"
-            />
-            <text
-              x={m.x - 24}
-              y={m.y + 10}
-              textAnchor="end"
-              fill={m.completed ? "#2A6B46" : m.current ? "#1E5235" : "#78716c"}
-              fontSize="12.5"
-              fontFamily="var(--font-body), system-ui, sans-serif"
-              fontWeight={m.current ? "700" : "500"}
-            >
-              {m.current ? "Current camp - " : ""}{m.index + 1}. {m.name}
-            </text>
-          </g>
-        ))}
-
         <text
-          x={startX}
-          y={baseY + 20}
-          textAnchor="start"
-          fill="#78716c"
-          fontSize="13"
-          fontFamily="var(--font-body), system-ui, sans-serif"
-        >
-          Base camp - begin your journey
-        </text>
-
-        <text
-          x={startX}
-          y={56}
-          textAnchor="start"
-          fill="#1E5235"
-          fontSize="15"
-          fontWeight="700"
-          fontFamily="var(--font-body), system-ui, sans-serif"
-        >
-          Expedition map
-        </text>
-
-        <text
-          x={startX}
-          y={78}
-          textAnchor="start"
-          fill="#78716c"
-          fontSize="12"
-          fontFamily="var(--font-body), system-ui, sans-serif"
-        >
-          Climb one camp at a time. Your guide updates the route as you learn.
-        </text>
-
-        <text
-          x={lastStairX - 12}
-          y={lastStairY - 22}
-          textAnchor="end"
-          fill="#1E5235"
-          fontSize="12"
+          x={PEAK[0] + 58}
+          y={PEAK[1] - 27}
+          fill={ACCENT}
+          fontSize="17"
           fontWeight="700"
           fontFamily="var(--font-body), system-ui, sans-serif"
         >
           summit
         </text>
 
-        <g transform={`translate(${starX - 18}, ${starY - 18})`} filter="url(#softGlow)">
-          <circle cx="18" cy="18" r="15" fill="#FFFFFF" stroke="#1E5235" strokeWidth="2" />
-          <path d="M18 8L20.6 15.4L28 18L20.6 20.6L18 28L15.4 20.6L8 18L15.4 15.4L18 8Z" fill="#E7B85B" />
-          <circle cx="18" cy="18" r="3" fill="#1E5235" />
-        </g>
+        {/* Heading */}
+        <text
+          x="48"
+          y="118"
+          fill={INK}
+          fontSize="40"
+          fontWeight="800"
+          letterSpacing="-1"
+          fontFamily="var(--font-body), system-ui, sans-serif"
+        >
+          Expedition map
+        </text>
+        <text x="48" y="156" fill={MUTED} fontSize="16" fontFamily="var(--font-body), system-ui, sans-serif">
+          Climb one camp at a time.
+        </text>
+        <text x="48" y="180" fill={MUTED} fontSize="16" fontFamily="var(--font-body), system-ui, sans-serif">
+          Your guide updates the route as you learn.
+        </text>
 
-        <g transform={`translate(${flagX}, ${flagY})`}>
-          <line x1="0" y1="0" x2="0" y2="-40" stroke="#44403c" strokeWidth="2" />
-          <polygon points="2,-40 32,-32 2,-22" fill="#E07A6E" opacity="0.9" />
-        </g>
+        {/* Base camp legend */}
+        <rect x="50" y="548" width="56" height="5" rx="2.5" fill={ACCENT} />
+        <rect x="240" y="548" width="66" height="5" rx="2.5" fill={ACCENT} />
+        <text x="50" y="588" fill={MUTED} fontSize="15" fontFamily="var(--font-body), system-ui, sans-serif">
+          Base camp – begin your journey
+        </text>
       </svg>
     </div>
   );

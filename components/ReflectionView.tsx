@@ -138,9 +138,6 @@ export default function ReflectionView({
             <h2 className="mt-1 text-2xl font-bold text-forest-950">
               Weekly Reflection
             </h2>
-            <p className="mt-1 text-sm text-stone-500">
-              Turn the week into lessons for the next stretch of the climb.
-            </p>
           </div>
         </div>
         <button

@@ -81,9 +81,6 @@ function MountainContent() {
           <h2 className="mt-2 text-3xl font-bold text-forest-950">
             {mountain.goal}
           </h2>
-          <p className="mt-2 max-w-2xl text-sm text-stone-500">
-            Summit: {mountain.summit}
-          </p>
         </div>
         <Link
           href={`/guide?mountain_id=${mountain.id}`}

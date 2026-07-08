@@ -70,6 +70,22 @@ function trailPathTo(dist: number): string {
 // bend below the peak, like the reference's summit-stage node
 const nodeDist = (i: number, count: number) => (TRAIL_LEN * (i + 1.5)) / (count + 0.5);
 
+function wrapText(text: string, maxChars: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    if (line && (line + " " + word).length > maxChars) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? line + " " + word : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 function pineTree(x: number, y: number, s: number) {
   return [
     `M ${x} ${y - 3 * s} L ${x - s} ${y - s}`,
@@ -225,16 +241,29 @@ export default function MountainViz({ milestones, summit, currentMilestoneIndex 
           points={`${PEAK[0] + 1},${PEAK[1] - 62} ${PEAK[0] + 36},${PEAK[1] - 52} ${PEAK[0] + 1},${PEAK[1] - 42}`}
           fill={AMBER}
         />
-        <text
-          x={PEAK[0] + 58}
-          y={PEAK[1] - 27}
-          fill={ACCENT}
-          fontSize="17"
-          fontWeight="700"
-          fontFamily="var(--font-body), system-ui, sans-serif"
-        >
-          summit
-        </text>
+        {(() => {
+          const allLines = wrapText(`summit: ${summit}`, 32);
+          const lines = allLines.slice(0, 5);
+          if (allLines.length > 5) lines[4] += "…";
+          return lines.map((line, i) => (
+            <text
+              key={i}
+              x={PEAK[0] + 58}
+              y={PEAK[1] - 27 + i * 20}
+              fontSize="14"
+              fontFamily="var(--font-body), system-ui, sans-serif"
+            >
+              {i === 0 ? (
+                <>
+                  <tspan fill={ACCENT} fontWeight="700">summit:</tspan>
+                  <tspan fill={MUTED}>{line.slice("summit:".length)}</tspan>
+                </>
+              ) : (
+                <tspan fill={MUTED}>{line}</tspan>
+              )}
+            </text>
+          ));
+        })()}
 
         {/* Base camp legend */}
         <rect x="50" y="548" width="56" height="5" rx="2.5" fill={ACCENT} />

@@ -60,6 +60,7 @@ function GuideContent() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchMountains = useCallback(async () => {
     const res = await fetch("/api/mountains");
@@ -163,10 +164,12 @@ function GuideContent() {
     }]);
 
     try {
+      abortRef.current = new AbortController();
       const res = await fetch(`/api/chats/${selectedChatId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: userContent }),
+        signal: abortRef.current.signal,
       });
 
       if (res.ok) {
@@ -582,18 +585,32 @@ function GuideContent() {
                   disabled={sending}
                   className="w-full bg-white rounded-2xl px-5 py-3.5 pr-12 text-sm text-stone-800 placeholder:text-stone-400 border border-stone-200 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 disabled:opacity-60 transition-colors duration-200"
                 />
-                <button
-                  type="button"
-                  onClick={() => sendMessage()}
-                  disabled={!input.trim() || sending}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-forest-700 text-white flex items-center justify-center hover:bg-forest-600 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
-                  style={{ boxShadow: "0 1px 4px rgba(20,60,35,0.2)" }}
-                  aria-label="Send"
-                >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <path d="M1 7h12M8 2l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
+                {sending ? (
+                  <button
+                    type="button"
+                    onClick={() => abortRef.current?.abort()}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl border border-stone-300 bg-white text-stone-600 flex items-center justify-center hover:border-summit hover:text-summit active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                    aria-label="Stop reply"
+                    title="Stop reply"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                      <rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="currentColor" />
+                    </svg>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => sendMessage()}
+                    disabled={!input.trim()}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-forest-700 text-white flex items-center justify-center hover:bg-forest-600 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                    style={{ boxShadow: "0 1px 4px rgba(20,60,35,0.2)" }}
+                    aria-label="Send"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M1 7h12M8 2l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
           </>

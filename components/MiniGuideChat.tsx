@@ -50,8 +50,13 @@ export default function MiniGuideChat({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const startedRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  function stopReply() {
+    abortRef.current?.abort();
+  }
 
   const subtitle =
     context.kind === "daily_review"
@@ -96,21 +101,25 @@ export default function MiniGuideChat({
 
         setMessages([{ id: "u0", role: "user", content, suggested_replies: [] }]);
 
+        abortRef.current = new AbortController();
         const res = await fetch(`/api/chats/${chat.id}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content, initial_context }),
+          signal: abortRef.current.signal,
         });
         if (!res.ok) throw new Error();
         const data = await res.json();
         appendAiReply(data);
-      } catch {
-        setMessages((prev) => [...prev, {
-          id: "err",
-          role: "ai",
-          content: "Your guide couldn't connect right now. Your changes are saved — open the AI Guide to talk it through later.",
-          suggested_replies: [],
-        }]);
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          setMessages((prev) => [...prev, {
+            id: "err",
+            role: "ai",
+            content: "Your guide couldn't connect right now. Your changes are saved — open the AI Guide to talk it through later.",
+            suggested_replies: [],
+          }]);
+        }
       }
       setSending(false);
     })();
@@ -180,14 +189,16 @@ export default function MiniGuideChat({
       { id: `u-${Date.now()}`, role: "user" as const, content, suggested_replies: [] },
     ]);
     try {
+      abortRef.current = new AbortController();
       const res = await fetch(`/api/chats/${chatId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
+        signal: abortRef.current.signal,
       });
       if (res.ok) appendAiReply(await res.json());
     } catch {
-      // silent
+      // silent — includes user-initiated stop
     }
     setSending(false);
     inputRef.current?.focus();
@@ -308,16 +319,30 @@ export default function MiniGuideChat({
           placeholder="Reply to your guide..."
           className="min-w-0 flex-1 rounded-xl border border-[#E7E0D7] bg-white px-3 py-2 text-[13px] text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200"
         />
-        <button
-          type="submit"
-          disabled={!input.trim() || sending || !chatId}
-          aria-label="Send"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-forest-700 text-white hover:bg-forest-600 disabled:opacity-40 active:scale-[0.94] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M1.5 7H12M12 7L7.5 2.5M12 7L7.5 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        {sending ? (
+          <button
+            type="button"
+            onClick={stopReply}
+            aria-label="Stop reply"
+            title="Stop reply"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-stone-300 bg-white text-stone-600 hover:border-summit hover:text-summit active:scale-[0.94] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="currentColor" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!input.trim() || !chatId}
+            aria-label="Send"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-forest-700 text-white hover:bg-forest-600 disabled:opacity-40 active:scale-[0.94] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M1.5 7H12M12 7L7.5 2.5M12 7L7.5 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
       </form>
     </div>
   );

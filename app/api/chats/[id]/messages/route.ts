@@ -147,11 +147,24 @@ Be warm, direct, specific. Reference real data. Keep replies concise (2–4 shor
 
   messages.push({ role: "user", content });
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-5-mini",
-    response_format: { type: "json_object" },
-    messages,
-  });
+  // Forward the client's abort signal so a stopped reply truly cancels the
+  // model call and never gets written to the chat history
+  let completion;
+  try {
+    completion = await openai.chat.completions.create(
+      {
+        model: "gpt-5-mini",
+        response_format: { type: "json_object" },
+        messages,
+      },
+      { signal: request.signal }
+    );
+  } catch (err) {
+    if (request.signal.aborted) {
+      return new Response(null, { status: 499 });
+    }
+    throw err;
+  }
 
   const raw = completion.choices[0]?.message?.content || "{}";
   let parsed: { reply: string; suggested_replies: string[]; actions: Record<string, unknown>[] };

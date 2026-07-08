@@ -363,6 +363,7 @@ Docked chat panel on the Mountain Overview page — the guide "comes to the user
 - Messages: user bubbles forest-700/white right-aligned, AI bubbles `#F4F1EA` left-aligned; typing indicator (3 bouncing dots); up to 3 suggested-reply chips
 - `propose_plan` / `advance_milestone` actions render as a "Your guide has a proposal — review it in the AI Guide →" button (complex action cards live only in the full guide)
 - Connection failure → friendly fallback bubble; input disabled
+- While a reply is pending, the send arrow becomes a **stop button** (square icon) — aborts the request, and the API route forwards the abort signal to OpenAI, so a stopped reply is truly cancelled and never written to chat history. Same control exists in the full AI Guide composer.
 
 ### ~~`ReflectionView`~~ (removed)
 

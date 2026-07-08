@@ -136,10 +136,11 @@ export default function TabNav({ tabs }: { tabs: TabConfig[] }) {
   return (
     <nav className="flex items-center gap-1 p-1.5 bg-stone-100 rounded-2xl w-fit" style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}>
       {tabs.map((tab) => {
+        const targetPath = tab.href.split("?")[0];
         const isActive =
-          tab.href === "/"
+          targetPath === "/"
             ? pathname === "/"
-            : pathname.startsWith(tab.href);
+            : pathname.startsWith(targetPath);
         return (
           <Link
             key={tab.href}

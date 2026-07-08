@@ -86,6 +86,7 @@ export default function PlanView({
   const [finishingDay, setFinishingDay] = useState<string | null>(null);
   const [savingDay, setSavingDay] = useState(false);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
+  const [openDayMenu, setOpenDayMenu] = useState<string | null>(null);
 
   const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
 
@@ -172,10 +173,11 @@ export default function PlanView({
     const schedule = plan.plan.schedule.map((d) =>
       d.day === dayName ? { ...d, finished: false, load_feel: undefined } : d
     );
+    setOpenDayMenu(null);
     updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
   }
 
-  async function finishDay(dayName: string, loadFeel?: string) {
+  async function finishDay(dayName: string, loadFeel?: string, quiet = false) {
     if (!plan?.plan.schedule || savingDay) return;
     setSavingDay(true);
 
@@ -207,8 +209,9 @@ export default function PlanView({
     setSavingDay(false);
 
     // The guide checks in right here on the page: always when something was
-    // missed, and also on a clean day that felt heavier than planned
-    if (missed.length || loadFeel === "heavier") {
+    // missed, and also on a clean day that felt heavier than planned.
+    // Quiet mode (catching up on past days) never opens the chat.
+    if (!quiet && (missed.length || loadFeel === "heavier")) {
       onDailyReview?.({ kind: "daily_review", day: dayName, completed, missed, load_feel: loadFeel });
     }
   }
@@ -416,9 +419,55 @@ export default function PlanView({
                         )}
                       </div>
                       <div className="mb-2.5 flex justify-center">
-                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${pill.cls}`}>
-                          {pill.text}
-                        </span>
+                        {day?.finished && !isRest ? (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setOpenDayMenu(openDayMenu === dayName ? null : dayName)}
+                              aria-haspopup="menu"
+                              aria-expanded={openDayMenu === dayName}
+                              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold hover:ring-1 hover:ring-forest-300 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200 ${pill.cls}`}
+                            >
+                              {pill.text} ▾
+                            </button>
+                            {openDayMenu === dayName && (
+                              <>
+                                <button
+                                  type="button"
+                                  aria-label="Close menu"
+                                  className="fixed inset-0 z-10 cursor-default"
+                                  onClick={() => setOpenDayMenu(null)}
+                                />
+                                <div
+                                  role="menu"
+                                  className="absolute left-1/2 top-full z-20 mt-1 w-32 -translate-x-1/2 overflow-hidden rounded-xl border border-[#E7E0D7] bg-white"
+                                  style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                                >
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => setOpenDayMenu(null)}
+                                    className="block w-full border-b border-[#E7E0D7] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 bg-forest-50/60 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                  >
+                                    ✓ Day complete
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => reopenDay(dayName)}
+                                    className="block w-full px-3 py-2 text-left text-[11px] font-medium text-stone-500 hover:bg-stone-50 hover:text-stone-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                  >
+                                    ↺ Relog day
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${pill.cls}`}>
+                            {pill.text}
+                          </span>
+                        )}
                       </div>
                       {!isRest ? (
                         <div className="space-y-2">
@@ -521,16 +570,15 @@ export default function PlanView({
                       )}
 
                       {/* Day footer: finish flow */}
-                      {day?.finished && !isRest && isToday && (
-                        <div className="mt-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => reopenDay(dayName)}
-                            className="text-[10px] font-medium text-stone-400 hover:text-forest-700 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
-                          >
-                            Reopen day
-                          </button>
-                        </div>
+                      {canCheckIn && !isToday && !isFuture && (
+                        <button
+                          type="button"
+                          disabled={savingDay}
+                          onClick={() => finishDay(dayName, undefined, true)}
+                          className="mt-3 w-full text-[11px] font-semibold px-2 py-1.5 rounded-lg border border-forest-200 text-forest-700 hover:bg-forest-50 hover:border-forest-300 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                        >
+                          Log this day
+                        </button>
                       )}
                       {canCheckIn && isToday && finishingDay !== dayName && (
                         <button

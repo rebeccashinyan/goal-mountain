@@ -81,20 +81,22 @@ Agent         Agent
 **Output:**
 ```json
 {
+  "analysis": "private per-turn reasoning — never shown to the user",
   "reply": "message to show the user",
   "status": "gathering | confirming | ready",
   "goal_data": {
     "goal": "refined goal string",
-    "current_level": "where they are now",
-    "target_date": "YYYY-MM-DD or null",
-    "constraints": "any limits or null"
+    "current_level": "dense summary incl. facts learned in conversation",
+    "target_date": "YYYY-MM-DD or null — the real pacing deadline (e.g. application season), not just the stated goal date",
+    "constraints": "everything shaping the plan: time, visa, region, preferences"
   }
 }
 ```
 
 **Behavior:**
-- `gathering` — still asking questions, asks one at a time
-- `confirming` — has enough info, summarizes and asks user to confirm
+- Expert-interviewer, not form-filler (model: `gpt-4o`): every turn it must fill `analysis` first — what's known + implied (e.g. "summer 2027 internship → applications open fall 2026"), what success at this goal depends on, which deciding factor is still unknown — then ask the ONE highest-value question. Only factual questions about the user's situation (school year, visa status, hours, preferences); never domain judgments ("what skills do you think matter?").
+- `gathering` — still asking questions, one at a time (3-5 total is the norm)
+- `confirming` — has enough info, summarizes including derived implications, asks user to confirm
 - `ready` — user confirmed, `goal_data` is final and can be sent to Research + Generator
 
 **DB reads:** none  

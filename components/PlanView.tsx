@@ -209,31 +209,17 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
 
       {plan && !showForm && (
         <>
-          {/* Priority + Next Action */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div
-              className="rounded-2xl border border-forest-200 bg-forest-50 p-5"
-              style={{ boxShadow: cardShadow }}
-            >
-              <p className="text-xs font-medium text-forest-600 uppercase tracking-wide mb-2">
-                Next Best Action
-              </p>
-              <p className="text-sm font-semibold text-forest-900 leading-relaxed">
-                {plan.next_best_action}
-              </p>
-            </div>
-
-            <div
-              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
-              style={{ boxShadow: cardShadow }}
-            >
-              <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
-                Priority This Week
-              </p>
-              <p className="text-sm text-stone-700 leading-relaxed">
-                {plan.priority_recommendation}
-              </p>
-            </div>
+          {/* Priority */}
+          <div
+            className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
+            style={{ boxShadow: cardShadow }}
+          >
+            <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
+              Priority This Week
+            </p>
+            <p className="text-sm text-stone-700 leading-relaxed">
+              {plan.priority_recommendation}
+            </p>
           </div>
 
           {/* Schedule */}
@@ -243,11 +229,6 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
                 <h3 className="text-xl font-bold text-forest-950">
                   Schedule
                 </h3>
-                {plan.plan.focus_area && (
-                  <span className="text-[10px] font-medium text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md">
-                    Focus: {plan.plan.focus_area}
-                  </span>
-                )}
                 {plan.plan.difficulty_level && (
                   <span
                     className={`text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-md ${difficultyLabel[plan.plan.difficulty_level]?.color || "text-stone-500 bg-stone-100"}`}
@@ -303,21 +284,6 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
                   );
                 })}
               </div>
-            </div>
-          )}
-
-          {/* Strategy Notes */}
-          {plan.strategy_notes && (
-            <div
-              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
-              style={{ boxShadow: cardShadow }}
-            >
-              <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
-                Strategy
-              </p>
-              <p className="text-sm text-stone-700 leading-relaxed">
-                {plan.strategy_notes}
-              </p>
             </div>
           )}
 

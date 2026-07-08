@@ -333,7 +333,7 @@ Design (blue expedition-map style):
 
 ### `PlanView`
 
-Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Shows: priority, next best action, day-by-day schedule with priority dots.
+Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Shows: "Priority This Week" card (full-width), day-by-day schedule with priority dots + difficulty chip, and "Adjustments from last week" when present. (Next best action, strategy notes, and focus area are returned by the API but not displayed.)
 
 ### `ProgressTracker`
 

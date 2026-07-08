@@ -95,7 +95,8 @@ Agent         Agent
 
 **Behavior:**
 - Expert-interviewer, not form-filler (model: `gpt-5-mini`; one-shot generator/research/insights agents use `gpt-5.1`, all other agents `gpt-5-mini`): every turn it must fill `analysis` first — what's known + implied (e.g. "summer 2027 internship → applications open fall 2026"), what success at this goal depends on, which deciding factor is still unknown — then ask the ONE highest-value question. Only factual questions about the user's situation (school year, visa status, hours, preferences); never domain judgments ("what skills do you think matter?").
-- `gathering` — still asking questions, one at a time (3-5 total is the norm)
+- Uncertainty handling: "not sure" / a range counts as an answer — the agent adopts a stated assumption and moves on; it only asks for precision when different answers within the plausible range would change the plan.
+- `gathering` — still asking questions, one answerable chunk per reply (may bundle 2-3 tightly-related micro-facts; 3-5 turns total is the norm)
 - `confirming` — has enough info, summarizes including derived implications, asks user to confirm
 - `ready` — user confirmed, `goal_data` is final and can be sent to Research + Generator
 

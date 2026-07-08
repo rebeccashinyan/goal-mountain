@@ -116,10 +116,7 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
             </svg>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
-              Planning Agent
-            </p>
-            <h2 className="mt-1 text-2xl font-bold text-forest-950">Weekly Plan</h2>
+            <h2 className="text-2xl font-bold text-forest-950">Weekly Plan</h2>
           {plan && (
             <p className="text-xs text-stone-400 mt-0.5">
               Week of{" "}

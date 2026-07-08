@@ -148,7 +148,7 @@ Be warm, direct, specific. Reference real data. Keep replies concise (2–4 shor
   messages.push({ role: "user", content });
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5-mini",
     response_format: { type: "json_object" },
     messages,
   });

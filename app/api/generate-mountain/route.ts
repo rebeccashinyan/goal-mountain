@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     .join("\n");
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5.1",
     response_format: { type: "json_object" },
     messages: [
       {

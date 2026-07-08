@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   // ── Pre-mountain mode: called with just a goal before the mountain exists ──
   if (rawGoal && !mountain_id) {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-5.1",
       response_format: { type: "json_object" },
       messages: [
         {
@@ -112,7 +112,7 @@ Be specific and factual. Use real-world knowledge about what this goal requires.
   }
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5.1",
     response_format: { type: "json_object" },
     messages: [
       {

@@ -64,7 +64,7 @@ ${JSON.stringify(latestPlan || "No plan this week")}`
 ${JSON.stringify(user_input)}`;
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5-mini",
     response_format: { type: "json_object" },
     messages: [
       {

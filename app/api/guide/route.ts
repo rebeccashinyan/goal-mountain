@@ -176,7 +176,7 @@ Only include actions when the user has clearly expressed intent or given you inf
   messages.push({ role: "user", content: message });
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5-mini",
     response_format: { type: "json_object" },
     messages,
   });

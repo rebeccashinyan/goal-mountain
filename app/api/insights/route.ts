@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     .flatMap((r: { blockers: { blocker: string; frequency: number; suggestion: string }[] }) => r.blockers || []);
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5.1",
     response_format: { type: "json_object" },
     messages: [
       {

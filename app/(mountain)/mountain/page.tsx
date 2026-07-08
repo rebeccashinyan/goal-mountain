@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import MountainViz from "@/components/MountainViz";
 import PlanView from "@/components/PlanView";
-import ProgressTracker from "@/components/ProgressTracker";
 import MiniGuideChat, { type DailyReviewContext } from "@/components/MiniGuideChat";
 
 interface MountainMilestone {
@@ -105,10 +104,6 @@ function MountainContent() {
         />
       </div>
       <PlanView mountainId={mountain.id} onDailyReview={setDailyReview} />
-      <ProgressTracker
-        mountainId={mountain.id}
-        onProgressLogged={fetchMountain}
-      />
       {dailyReview && (
         <MiniGuideChat
           mountainId={mountain.id}

@@ -79,6 +79,7 @@ export default function PlanView({
   const [constraints, setConstraints] = useState("");
   const [finishingDay, setFinishingDay] = useState<string | null>(null);
   const [savingDay, setSavingDay] = useState(false);
+  const [openPicker, setOpenPicker] = useState<string | null>(null);
 
   const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
 
@@ -159,11 +160,18 @@ export default function PlanView({
     if (!plan?.plan.schedule) return;
     const schedule = plan.plan.schedule.map((d) => {
       if (d.day !== dayName || d.finished) return d;
-      const tasks = d.tasks.map((t, i) =>
-        i === taskIndex ? { ...t, status: t.status === status ? undefined : status } : t
-      );
+      const tasks = d.tasks.map((t, i) => (i === taskIndex ? { ...t, status } : t));
       return { ...d, tasks };
     });
+    setOpenPicker(null);
+    updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
+  }
+
+  function reopenDay(dayName: string) {
+    if (!plan?.plan.schedule) return;
+    const schedule = plan.plan.schedule.map((d) =>
+      d.day === dayName ? { ...d, finished: false, load_feel: undefined } : d
+    );
     updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
   }
 
@@ -216,17 +224,6 @@ export default function PlanView({
 
   const inputClasses =
     "w-full bg-white rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-[#E7E0D7] focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
-
-  const statusChip = (selected: boolean, kind: TaskStatus) =>
-    `text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition-colors duration-200 active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 ${
-      selected
-        ? kind === "done"
-          ? "bg-forest-600 border-forest-600 text-white"
-          : "bg-summit border-summit text-white"
-        : kind === "done"
-          ? "border-stone-200 text-stone-400 hover:border-forest-300 hover:text-forest-700"
-          : "border-stone-200 text-stone-400 hover:border-red-300 hover:text-summit"
-    }`;
 
   const reflectionIsFresh =
     reflection &&
@@ -448,23 +445,56 @@ export default function PlanView({
                                       </span>
                                     )
                                   ) : (
-                                    <div className="mt-1 flex gap-1">
+                                    <div className="relative mt-1 w-fit">
                                       <button
                                         type="button"
-                                        onClick={() => setTaskStatus(day.day, i, "done")}
-                                        className={statusChip(task.status === "done", "done")}
-                                        aria-pressed={task.status === "done"}
+                                        onClick={() =>
+                                          setOpenPicker(openPicker === `${day.day}-${i}` ? null : `${day.day}-${i}`)
+                                        }
+                                        aria-haspopup="menu"
+                                        aria-expanded={openPicker === `${day.day}-${i}`}
+                                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition-colors duration-200 active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 ${
+                                          task.status === "done"
+                                            ? "bg-forest-50 border-forest-200 text-forest-700 hover:border-forest-300"
+                                            : task.status === "missed"
+                                              ? "bg-red-50 border-red-200 text-summit hover:border-red-300"
+                                              : "border-stone-200 text-stone-400 hover:border-forest-300 hover:text-forest-700"
+                                        }`}
                                       >
-                                        ✓ Done
+                                        {task.status === "done" ? "✓ Done" : task.status === "missed" ? "✗ Missed" : "Status"} ▾
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setTaskStatus(day.day, i, "missed")}
-                                        className={statusChip(task.status === "missed", "missed")}
-                                        aria-pressed={task.status === "missed"}
-                                      >
-                                        ✗ Missed
-                                      </button>
+                                      {openPicker === `${day.day}-${i}` && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            aria-label="Close menu"
+                                            className="fixed inset-0 z-10 cursor-default"
+                                            onClick={() => setOpenPicker(null)}
+                                          />
+                                          <div
+                                            role="menu"
+                                            className="absolute left-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-xl border border-[#E7E0D7] bg-white"
+                                            style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                                          >
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              onClick={() => setTaskStatus(day.day, i, "done")}
+                                              className="block w-full border-b border-[#E7E0D7] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                            >
+                                              ✓ Done
+                                            </button>
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              onClick={() => setTaskStatus(day.day, i, "missed")}
+                                              className="block w-full px-3 py-2 text-left text-[11px] font-semibold text-summit hover:bg-red-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                            >
+                                              ✗ Missed
+                                            </button>
+                                          </div>
+                                        </>
+                                      )}
                                     </div>
                                   )
                                 )}
@@ -478,9 +508,20 @@ export default function PlanView({
 
                       {/* Day footer: finish flow */}
                       {day.finished && !isRest && (
-                        <p className="mt-3 text-[11px] font-semibold text-forest-700">
-                          ✓ Day complete — nice climbing
-                        </p>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-semibold text-forest-700">
+                            ✓ Day complete — nice climbing
+                          </p>
+                          {isToday && (
+                            <button
+                              type="button"
+                              onClick={() => reopenDay(day.day)}
+                              className="shrink-0 text-[10px] font-medium text-stone-400 hover:text-forest-700 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                            >
+                              Reopen
+                            </button>
+                          )}
+                        </div>
                       )}
                       {canCheckIn && isToday && finishingDay !== day.day && (
                         <button

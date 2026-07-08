@@ -77,15 +77,9 @@ export default function DashboardPage() {
         <>
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between mt-8 mb-8">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
-                Expedition Board
-              </p>
-              <h2 className="mt-2 text-3xl font-bold text-forest-950">
+              <h2 className="text-3xl font-bold text-forest-950">
                 My Mountains
               </h2>
-              <p className="mt-2 max-w-xl text-sm text-stone-500">
-                Choose a goal, check the next camp, and let the guide help you keep moving.
-              </p>
             </div>
             <button
               onClick={() => setModalOpen(true)}
@@ -101,10 +95,7 @@ export default function DashboardPage() {
               <div key={m.id} className="group relative">
                 <div className="flex items-start justify-between gap-3 mb-3 px-1">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-forest-600">
-                      Active Mountain
-                    </p>
-                    <p className="mt-1 text-base text-stone-800 font-semibold leading-snug">
+                    <p className="text-base text-stone-800 font-semibold leading-snug">
                       {m.goal}
                     </p>
                   </div>
@@ -154,8 +145,7 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="px-5 pb-5 pt-3">
-                    <div className="flex items-center justify-between text-xs font-medium text-stone-500">
-                      <span>Progress to summit</span>
+                    <div className="flex items-center justify-end">
                       <span className="text-lg font-bold text-forest-800">{m.progress}%</span>
                     </div>
                     <div className="mt-2 h-2 rounded-full bg-white ring-1 ring-black/5">

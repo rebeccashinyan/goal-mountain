@@ -71,12 +71,6 @@ function MountainContent() {
     );
   }
 
-  const progress =
-    mountain.milestones.length === 0
-      ? 0
-      : Math.round(((mountain.current_milestone_index + 1) / mountain.milestones.length) * 100);
-  const currentMilestone = mountain.milestones[mountain.current_milestone_index];
-
   return (
     <div className="max-w-[1180px] mx-auto mt-8 pb-10">
       <div className="mb-6 flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: "0 10px 28px rgba(43, 58, 42, 0.08), 0 1px 2px rgba(43, 58, 42, 0.06)" }}>
@@ -90,16 +84,6 @@ function MountainContent() {
           <p className="mt-2 max-w-2xl text-sm text-stone-500">
             Summit: {mountain.summit}
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-forest-700 ring-1 ring-forest-100">
-              {progress}% to summit
-            </span>
-            {currentMilestone && (
-              <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 ring-1 ring-stone-200">
-                Current camp: {currentMilestone.name}
-              </span>
-            )}
-          </div>
         </div>
         <Link
           href={`/guide?mountain_id=${mountain.id}`}

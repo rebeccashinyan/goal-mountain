@@ -18,7 +18,6 @@ const PATH_DONE = "#2C4E74";
 const SCENERY = "#C5D5E6";
 const SCENERY_SOFT = "#DCE6F0";
 const AMBER = "#E9B24A";
-const INK = "#182233";
 const MUTED = "#66707D";
 const LEADER = "#DDE6EF";
 const ACCENT = "#46698F";
@@ -235,25 +234,6 @@ export default function MountainViz({ milestones, summit, currentMilestoneIndex 
           fontFamily="var(--font-body), system-ui, sans-serif"
         >
           summit
-        </text>
-
-        {/* Heading */}
-        <text
-          x="48"
-          y="118"
-          fill={INK}
-          fontSize="40"
-          fontWeight="800"
-          letterSpacing="-1"
-          fontFamily="var(--font-body), system-ui, sans-serif"
-        >
-          Expedition map
-        </text>
-        <text x="48" y="156" fill={MUTED} fontSize="16" fontFamily="var(--font-body), system-ui, sans-serif">
-          Climb one camp at a time.
-        </text>
-        <text x="48" y="180" fill={MUTED} fontSize="16" fontFamily="var(--font-body), system-ui, sans-serif">
-          Your guide updates the route as you learn.
         </text>
 
         {/* Base camp legend */}

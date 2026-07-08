@@ -168,16 +168,16 @@ app/
 **Empty state:** Centered message + "Create Mountain" CTA button.
 
 **Loaded state:**
-- Header row: eyebrow "Expedition Board" + h2 "My Mountains" + subtitle + "+ Create Mountain" button (right-aligned on desktop)
+- Header row: h2 "My Mountains" + "+ Create Mountain" button (right-aligned on desktop)
 - Grid: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5`
 
 **Mountain card structure:**
-1. Above card: "Active Mountain" eyebrow + goal title + delete button (top-right, hidden until hover)
+1. Above card: goal title + delete button (top-right, hidden until hover)
 2. Card body (rounded-2xl, border, bg-[#FBF8F1]):
    - Header row: "Today" label + "Camp X/Y" pill
    - Current task text (or italic placeholder if empty)
    - `MiniMountain` SVG visualization (h-[150px], rounded inner)
-   - Progress bar + percentage
+   - Progress bar + right-aligned percentage (no label)
 3. Card hover: `-translate-y-1`, border changes to `forest-200`
 
 **Create Mountain Modal:** Triggered by "+ Create Mountain" button. Full modal with chat interface.
@@ -323,7 +323,6 @@ Full-size SVG "Expedition map" visualization used on the Overview page. Props: `
 
 Design (blue expedition-map style):
 - Light blue-gray card background (`#F7F9FC`), rounded corners
-- Top-left: "Expedition map" heading (bold, near-black) + 2-line gray subtitle ("Climb one camp at a time." / "Your guide updates the route as you learn.")
 - Right side: light-blue outlined mountain silhouette with scenery (foothill ridge lines, pine trees, cloud)
 - Fixed hand-tuned trail in slate blue (`#4A6E96`) traced from the reference art: long gentle approach from the compass, wide switchbacks mid-mountain, near-vertical final climb onto the peak. Milestone nodes are placed along the trail by arc length, so the trail shape never distorts regardless of milestone count; the last milestone lands on the final bend below the peak
 - Node states: upcoming = white with blue stroke, current = amber fill (`#E9B24A`) with bold navy label, completed = blue fill with white center dot; completed segments render darker/thicker (`#2E5075`)

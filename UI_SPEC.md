@@ -330,14 +330,14 @@ Design (blue expedition-map style):
 
 ### `PlanView`
 
-Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Shows: "Week in Review" card (latest auto-reflection summary + up to 3 lessons, only when < 10 days old), "Priority This Week" card, day-by-day schedule, and "Adjustments from last week" when present. (Next best action, strategy notes, and focus area are returned by the API but not displayed.)
+Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Shows: "Week in Review" card (latest auto-reflection summary + up to 3 lessons, only when < 10 days old), "Priority This Week" card, day-by-day schedule (no difficulty chip), and "Adjustments from last week" when present. (Next best action, strategy notes, and focus area are returned by the API but not displayed.)
 
 **Daily check-in flow:**
 - Every task in a non-rest day card has one compact "Status ▾" button; clicking it opens a small dropdown menu below it — "✓ Done" (forest) on top, divider, "✗ Missed" (summit red) below — with click-outside to close. After picking, the button shows the chosen state in its color (still clickable to change until the day is finished). Selections persist immediately via `PATCH /api/plan` (statuses live inside the plan JSON).
 - Today's card (matched by weekday name) is highlighted (forest border + ring) with a "TODAY" badge and a "Finish today" button.
 - "Finish today" → one-tap load question ("Today's load felt: lighter / about right / heavier than planned", skippable). Then: unlabeled tasks are marked missed, the day is locked (`finished: true`), and one log is written via `POST /api/track-progress` (`data.source: "daily_checkin"` with completed/missed lists + load_feel).
 - If nothing was missed (and load wasn't "heavier") → footer shows "✓ Day complete — nice climbing", no conversation. If tasks were missed OR the load felt heavier → the `MiniGuideChat` panel opens on the same page (no navigation): the guide auto-creates a "Daily check-in — {day}" chat and asks what got in the way (one question at a time; on a clean-but-heavy day, one light "which task ran long?" question instead), stores reasons as memories, and can propose a plan adjustment.
-- Finished days render read-only status tags; done tasks get a strikethrough.
+- Finished days render read-only status tags; done tasks get a strikethrough. Today's finished card shows a subtle "Reopen" link next to "✓ Day complete" — it unlocks the day (clears `finished` + `load_feel`, keeps task statuses) so statuses can be corrected and the day re-finished. Re-finishing writes an additional progress log; earlier logs are not removed.
 
 **Week rollover:** clicking "New Plan"/"Generate" when a plan already exists first fires `POST /api/reflect { auto: true }` (best-effort) so the Reflection Agent reviews the finished week from its data, then generates the new plan — which reads that reflection + memories for adjustments.
 

@@ -50,13 +50,6 @@ const priorityDot: Record<string, string> = {
   low: "bg-forest-300",
 };
 
-const difficultyLabel: Record<string, { text: string; color: string }> = {
-  easy: { text: "Easy", color: "text-forest-600 bg-forest-50" },
-  moderate: { text: "Moderate", color: "text-amber-700 bg-amber-50" },
-  challenging: { text: "Challenging", color: "text-summit bg-red-50" },
-  intense: { text: "Intense", color: "text-red-700 bg-red-50" },
-};
-
 const loadFeelOptions: { value: string; label: string }[] = [
   { value: "lighter", label: "Lighter than planned" },
   { value: "about_right", label: "About right" },
@@ -372,19 +365,9 @@ export default function PlanView({
           {/* Schedule */}
           {plan.plan.schedule && plan.plan.schedule.length > 0 && (
             <div>
-              <div className="flex items-center gap-3 mb-3">
-                <h3 className="text-xl font-bold text-forest-950">
-                  Schedule
-                </h3>
-                {plan.plan.difficulty_level && (
-                  <span
-                    className={`text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-md ${difficultyLabel[plan.plan.difficulty_level]?.color || "text-stone-500 bg-stone-100"}`}
-                  >
-                    {difficultyLabel[plan.plan.difficulty_level]?.text ||
-                      plan.plan.difficulty_level}
-                  </span>
-                )}
-              </div>
+              <h3 className="mb-3 text-xl font-bold text-forest-950">
+                Schedule
+              </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
                 {plan.plan.schedule.map((day) => {

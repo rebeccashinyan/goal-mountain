@@ -69,15 +69,18 @@ const loadFeelOptions: { value: string; label: string }[] = [
 export default function PlanView({
   mountainId,
   onDailyReview,
+  onPlanTalk,
+  refreshKey = 0,
 }: {
   mountainId: string;
   onDailyReview?: (ctx: DailyReviewContext) => void;
+  onPlanTalk?: (planSummary: string) => void;
+  refreshKey?: number;
 }) {
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [reflection, setReflection] = useState<ReflectionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [showForm, setShowForm] = useState(false);
   const [availableTime, setAvailableTime] = useState("");
   const [constraints, setConstraints] = useState("");
   const [finishingDay, setFinishingDay] = useState<string | null>(null);
@@ -109,32 +112,17 @@ export default function PlanView({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchPlan();
     fetchReflection();
-  }, [fetchPlan, fetchReflection]);
+  }, [fetchPlan, fetchReflection, refreshKey]);
 
   async function generatePlan() {
     if (generating) return;
     setGenerating(true);
 
-    // Week rollover: before planning, let the Reflection Agent review the
-    // finished week automatically from its data — the planner reads the
-    // fresh reflection + memories when building the new week
-    if (plan) {
-      try {
-        await fetch("/api/reflect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mountain_id: mountainId, auto: true }),
-        });
-        fetchReflection();
-      } catch {
-        // reflection is best-effort — planning proceeds without it
-      }
-    }
-
     const body: Record<string, string> = { mountain_id: mountainId };
     if (availableTime.trim()) body.available_time = availableTime.trim();
     if (constraints.trim()) body.user_constraints = constraints.trim();
 
+    // Week rollover reflection runs server-side inside POST /api/plan
     const res = await fetch("/api/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -144,10 +132,19 @@ export default function PlanView({
     if (res.ok) {
       const data = await res.json();
       setPlan(data);
-      setShowForm(false);
+      fetchReflection();
     }
 
     setGenerating(false);
+  }
+
+  function startPlanTalk() {
+    if (!plan) return;
+    const days = plan.plan.schedule
+      ?.map((d) => `${d.day}: ${d.tasks.map((t) => `${t.task} (${t.duration})`).join(", ")}`)
+      .join(" | ");
+    const summary = `Week of ${plan.week_start}. Focus: ${plan.plan.focus_area || "not set"}. Schedule: ${days || "empty"}`.slice(0, 700);
+    onPlanTalk?.(summary);
   }
 
   function updatePlanJson(updated: PlanData) {
@@ -159,7 +156,7 @@ export default function PlanView({
     });
   }
 
-  function setTaskStatus(dayName: string, taskIndex: number, status: TaskStatus) {
+  function setTaskStatus(dayName: string, taskIndex: number, status: TaskStatus | undefined) {
     if (!plan?.plan.schedule) return;
     const schedule = plan.plan.schedule.map((d) => {
       if (d.day !== dayName || d.finished) return d;
@@ -212,7 +209,7 @@ export default function PlanView({
     // The guide checks in right here on the page: always when something was
     // missed, and also on a clean day that felt heavier than planned
     if (missed.length || loadFeel === "heavier") {
-      onDailyReview?.({ day: dayName, completed, missed, load_feel: loadFeel });
+      onDailyReview?.({ kind: "daily_review", day: dayName, completed, missed, load_feel: loadFeel });
     }
   }
 
@@ -263,7 +260,7 @@ export default function PlanView({
           </div>
         </div>
         <button
-          onClick={() => (plan && !showForm ? setShowForm(true) : generatePlan())}
+          onClick={() => (plan ? startPlanTalk() : generatePlan())}
           disabled={generating}
           className="text-sm px-4 py-2 rounded-xl bg-white text-forest-800 font-semibold border border-forest-200 hover:bg-forest-50 hover:border-forest-300 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
           style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
@@ -275,15 +272,20 @@ export default function PlanView({
               Planning...
             </span>
           ) : plan ? (
-            "New Plan"
+            <span className="flex items-center gap-2">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M7 1.5L8.5 5.5L12.5 7L8.5 8.5L7 12.5L5.5 8.5L1.5 7L5.5 5.5L7 1.5Z" fill="currentColor" />
+              </svg>
+              Discuss plan with AI
+            </span>
           ) : (
             "Generate Plan"
           )}
         </button>
       </div>
 
-      {/* Form */}
-      {(showForm || !plan) && !generating && (
+      {/* Form — only for the very first plan; changes go through the guide chat */}
+      {!plan && !generating && (
         <div
           className="rounded-3xl border border-[#E7E0D7] bg-white p-5 space-y-3"
           style={{ boxShadow: cardShadow }}
@@ -321,19 +323,11 @@ export default function PlanView({
             >
               Generate
             </button>
-            {plan && (
-              <button
-                onClick={() => setShowForm(false)}
-                className="text-sm px-4 py-2 rounded-xl text-stone-600 hover:bg-stone-100 active:scale-[0.97] transition-colors duration-200"
-              >
-                Cancel
-              </button>
-            )}
           </div>
         </div>
       )}
 
-      {plan && !showForm && (
+      {plan && (
         <>
           {/* Week in review — written automatically by the Reflection Agent */}
           {reflectionIsFresh && (
@@ -484,6 +478,16 @@ export default function PlanView({
                                           >
                                             ✗ Missed
                                           </button>
+                                          {task.status && (
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              onClick={() => setTaskStatus(dayName, i, undefined)}
+                                              className="block w-full border-t border-[#E7E0D7] px-3 py-2 text-left text-[11px] font-medium text-stone-400 hover:bg-stone-50 hover:text-stone-600 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                            >
+                                              ↺ Clear
+                                            </button>
+                                          )}
                                         </div>
                                       </>
                                     )}

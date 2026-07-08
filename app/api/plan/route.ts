@@ -26,6 +26,32 @@ export async function POST(request: Request) {
     .order("created_at", { ascending: false })
     .limit(3);
 
+  // Week rollover: if the previous plan hasn't been reflected on yet, run the
+  // Reflection Agent first (auto mode) so this plan learns from that week.
+  // Fires for every plan-generation path — form, guide chat, mini chat.
+  if (pastPlans?.length) {
+    const { data: latestReflections } = await supabase
+      .from("reflections")
+      .select("created_at")
+      .eq("mountain_id", mountain_id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const needsReflection =
+      !latestReflections?.length ||
+      new Date(latestReflections[0].created_at) < new Date(pastPlans[0].created_at);
+    if (needsReflection) {
+      try {
+        await fetch(new URL("/api/reflect", request.url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mountain_id, auto: true }),
+        });
+      } catch {
+        // reflection is best-effort — planning proceeds without it
+      }
+    }
+  }
+
   const { data: progressLogs } = await supabase
     .from("progress_logs")
     .select("*")

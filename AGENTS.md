@@ -288,7 +288,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 ```json
 { "mountain_id": "uuid", "auto": true }
 ```
-Triggered by `PlanView` at week rollover, right before the next weekly plan is generated (so the planner reads the fresh reflection). Stores `user_input` as `{ "auto": true }`.
+Triggered server-side by `POST /api/plan` at week rollover: before generating, the plan route checks whether the latest plan already has a newer reflection — if not, it calls `/api/reflect { auto: true }` first (best-effort), so every plan-generation path (first-plan form, mini plan chat, full guide) learns from the finished week. Stores `user_input` as `{ "auto": true }`.
 
 **Input (legacy manual mode, still accepted):**
 ```json

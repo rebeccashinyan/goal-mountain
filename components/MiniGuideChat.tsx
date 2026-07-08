@@ -4,11 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export interface DailyReviewContext {
+  kind: "daily_review";
   day: string;
   completed: string[];
   missed: string[];
   load_feel?: string;
 }
+
+export interface PlanTalkContext {
+  kind: "plan_talk";
+  summary: string;
+}
+
+export type MiniChatContext = DailyReviewContext | PlanTalkContext;
 
 interface ChatMessage {
   id: string;
@@ -16,6 +24,7 @@ interface ChatMessage {
   content: string;
   suggested_replies: string[];
   needsGuide?: boolean;
+  note?: boolean;
 }
 
 const loadFeelText = (feel?: string) =>
@@ -26,12 +35,14 @@ const loadFeelText = (feel?: string) =>
 
 export default function MiniGuideChat({
   mountainId,
-  review,
+  context,
   onClose,
+  onPlanUpdated,
 }: {
   mountainId: string;
-  review: DailyReviewContext;
+  context: MiniChatContext;
   onClose: () => void;
+  onPlanUpdated?: () => void;
 }) {
   const router = useRouter();
   const [chatId, setChatId] = useState<string | null>(null);
@@ -41,6 +52,11 @@ export default function MiniGuideChat({
   const startedRef = useRef(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const subtitle =
+    context.kind === "daily_review"
+      ? `Daily check-in — ${context.day}`
+      : "Adjusting your weekly plan";
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -53,25 +69,32 @@ export default function MiniGuideChat({
     (async () => {
       setSending(true);
       try {
+        const title =
+          context.kind === "daily_review"
+            ? `Daily check-in — ${context.day}`
+            : "Plan discussion";
         const chatRes = await fetch("/api/chats", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mountain_id: mountainId,
-            title: `Daily check-in — ${review.day}`,
-            type: "user_initiated",
-          }),
+          body: JSON.stringify({ mountain_id: mountainId, title, type: "user_initiated" }),
         });
         if (!chatRes.ok) throw new Error();
         const chat = await chatRes.json();
         setChatId(chat.id);
 
-        const content = `Finished ${review.day}. Completed: ${review.completed.length ? review.completed.join("; ") : "nothing"}.${review.missed.length ? ` Missed: ${review.missed.join("; ")}.` : ""}`;
-        setMessages([{ id: "u0", role: "user", content, suggested_replies: [] }]);
+        let content: string;
+        let initial_context: string;
+        if (context.kind === "daily_review") {
+          content = `Finished ${context.day}. Completed: ${context.completed.length ? context.completed.join("; ") : "nothing"}.${context.missed.length ? ` Missed: ${context.missed.join("; ")}.` : ""}`;
+          initial_context = context.missed.length
+            ? `Daily check-in for ${context.day}. Completed tasks: ${context.completed.join("; ") || "none"}. Missed tasks: ${context.missed.join("; ")}. ${loadFeelText(context.load_feel)} Warmly acknowledge what got done, then ask what got in the way of the missed tasks — one question at a time, not an interrogation. Store the reason as a memory, and if the plan needs adjusting based on what the user says, propose a plan adjustment.`
+            : `Daily check-in for ${context.day}. The user completed every task: ${context.completed.join("; ")}. ${loadFeelText(context.load_feel)} Congratulate them briefly, then ask ONE light question: which task ran longer than planned? Keep it short and celebratory — they had a good day. Store what they say as a memory for future plan sizing.`;
+        } else {
+          content = "I'd like to adjust this week's plan.";
+          initial_context = `The user wants to discuss and adjust their weekly plan. Current plan: ${context.summary}. Ask what they'd like to change — pacing, which days, task load, or focus — one question at a time. Once you understand what they want, use the propose_plan action with their constraints to regenerate the plan. Keep it conversational and brief.`;
+        }
 
-        const initial_context = review.missed.length
-          ? `Daily check-in for ${review.day}. Completed tasks: ${review.completed.join("; ") || "none"}. Missed tasks: ${review.missed.join("; ")}. ${loadFeelText(review.load_feel)} Warmly acknowledge what got done, then ask what got in the way of the missed tasks — one question at a time, not an interrogation. Store the reason as a memory, and if the plan needs adjusting based on what the user says, propose a plan adjustment.`
-          : `Daily check-in for ${review.day}. The user completed every task: ${review.completed.join("; ")}. ${loadFeelText(review.load_feel)} Congratulate them briefly, then ask ONE light question: which task ran longer than planned? Keep it short and celebratory — they had a good day. Store what they say as a memory for future plan sizing.`;
+        setMessages([{ id: "u0", role: "user", content, suggested_replies: [] }]);
 
         const res = await fetch(`/api/chats/${chat.id}/messages`, {
           method: "POST",
@@ -80,12 +103,12 @@ export default function MiniGuideChat({
         });
         if (!res.ok) throw new Error();
         const data = await res.json();
-        appendAiReply(chat.id, data);
+        appendAiReply(data);
       } catch {
         setMessages((prev) => [...prev, {
           id: "err",
           role: "ai",
-          content: "Your guide couldn't connect right now. Your day is saved — open the AI Guide to talk it through later.",
+          content: "Your guide couldn't connect right now. Your changes are saved — open the AI Guide to talk it through later.",
           suggested_replies: [],
         }]);
       }
@@ -94,10 +117,12 @@ export default function MiniGuideChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function appendAiReply(chat: string, data: { reply: string; suggested_replies?: string[]; actions?: { type?: string }[] }) {
-    const needsGuide = (data.actions || []).some(
-      (a) => a.type === "propose_plan" || a.type === "advance_milestone"
-    );
+  function appendAiReply(data: {
+    reply: string;
+    suggested_replies?: string[];
+    actions?: { type?: string; user_constraints?: string; available_time?: string }[];
+  }) {
+    const needsGuide = (data.actions || []).some((a) => a.type === "advance_milestone");
     setMessages((prev) => [...prev, {
       id: `ai-${Date.now()}`,
       role: "ai",
@@ -105,6 +130,44 @@ export default function MiniGuideChat({
       suggested_replies: data.suggested_replies || [],
       needsGuide,
     }]);
+
+    const planAction = (data.actions || []).find((a) => a.type === "propose_plan");
+    if (planAction) regeneratePlan(planAction.user_constraints, planAction.available_time);
+  }
+
+  // The guide proposed a plan change — regenerate it right here so the
+  // schedule on this page updates while the conversation continues
+  async function regeneratePlan(userConstraints?: string, availableTime?: string) {
+    setSending(true);
+    try {
+      const res = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mountain_id: mountainId,
+          user_constraints: userConstraints,
+          available_time: availableTime,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      onPlanUpdated?.();
+      setMessages((prev) => [...prev, {
+        id: `note-${Date.now()}`,
+        role: "ai",
+        content: "✓ Your weekly plan is updated — take a look at the schedule on this page.",
+        suggested_replies: [],
+        note: true,
+      }]);
+    } catch {
+      setMessages((prev) => [...prev, {
+        id: `note-${Date.now()}`,
+        role: "ai",
+        content: "I couldn't update the plan just now — try again in a moment.",
+        suggested_replies: [],
+        note: true,
+      }]);
+    }
+    setSending(false);
   }
 
   async function send(text?: string) {
@@ -122,7 +185,7 @@ export default function MiniGuideChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       });
-      if (res.ok) appendAiReply(chatId, await res.json());
+      if (res.ok) appendAiReply(await res.json());
     } catch {
       // silent
     }
@@ -143,7 +206,7 @@ export default function MiniGuideChat({
       className="fixed bottom-5 right-5 z-50 flex h-[480px] w-[360px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-[#E7E0D7] bg-white"
       style={{ boxShadow: "0 24px 60px rgba(43, 58, 42, 0.18), 0 4px 12px rgba(43, 58, 42, 0.08)" }}
       role="dialog"
-      aria-label="Guide check-in chat"
+      aria-label="Guide chat"
     >
       {/* Header */}
       <div className="flex items-center gap-2.5 border-b border-[#E7E0D7] bg-[#FBF8F1] px-4 py-3">
@@ -154,7 +217,7 @@ export default function MiniGuideChat({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold text-forest-950 leading-tight">Your guide</p>
-          <p className="truncate text-[11px] text-stone-400">Daily check-in — {review.day}</p>
+          <p className="truncate text-[11px] text-stone-400">{subtitle}</p>
         </div>
         <button
           type="button"
@@ -187,7 +250,9 @@ export default function MiniGuideChat({
               className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
                 m.role === "user"
                   ? "ml-auto bg-forest-700 text-white rounded-br-md"
-                  : "bg-[#F4F1EA] text-stone-700 rounded-bl-md"
+                  : m.note
+                    ? "border border-forest-200 bg-forest-50 text-forest-800 font-medium rounded-bl-md"
+                    : "bg-[#F4F1EA] text-stone-700 rounded-bl-md"
               }`}
             >
               {m.content}

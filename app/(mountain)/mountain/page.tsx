@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import MountainViz from "@/components/MountainViz";
 import PlanView from "@/components/PlanView";
-import MiniGuideChat, { type DailyReviewContext } from "@/components/MiniGuideChat";
+import MiniGuideChat, { type MiniChatContext } from "@/components/MiniGuideChat";
 
 interface MountainMilestone {
   name: string;
@@ -27,7 +27,8 @@ function MountainContent() {
   const id = searchParams.get("id");
   const [mountain, setMountain] = useState<MountainData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dailyReview, setDailyReview] = useState<DailyReviewContext | null>(null);
+  const [miniChat, setMiniChat] = useState<MiniChatContext | null>(null);
+  const [planRefreshKey, setPlanRefreshKey] = useState(0);
 
   const fetchMountain = useCallback(async () => {
     if (id) {
@@ -103,12 +104,18 @@ function MountainContent() {
           currentMilestoneIndex={mountain.current_milestone_index}
         />
       </div>
-      <PlanView mountainId={mountain.id} onDailyReview={setDailyReview} />
-      {dailyReview && (
+      <PlanView
+        mountainId={mountain.id}
+        onDailyReview={setMiniChat}
+        onPlanTalk={(summary) => setMiniChat({ kind: "plan_talk", summary })}
+        refreshKey={planRefreshKey}
+      />
+      {miniChat && (
         <MiniGuideChat
           mountainId={mountain.id}
-          review={dailyReview}
-          onClose={() => setDailyReview(null)}
+          context={miniChat}
+          onClose={() => setMiniChat(null)}
+          onPlanUpdated={() => setPlanRefreshKey((k) => k + 1)}
         />
       )}
     </div>

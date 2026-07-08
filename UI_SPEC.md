@@ -333,14 +333,16 @@ Design (blue expedition-map style):
 Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Shows: "Week in Review" card (latest auto-reflection summary + up to 3 lessons, only when < 10 days old), "Priority This Week" card, day-by-day schedule (no difficulty chip), and "Adjustments from last week" when present. (Next best action, strategy notes, and focus area are returned by the API but not displayed.)
 
 **Daily check-in flow:**
-- Every task in a non-rest day card has one compact "Status ▾" button; clicking it opens a small dropdown menu below it — "✓ Done" (forest) on top, divider, "✗ Missed" (summit red) below — with click-outside to close. After picking, the button shows the chosen state in its color (still clickable to change until the day is finished). Selections persist immediately via `PATCH /api/plan` (statuses live inside the plan JSON).
+- Every task in a non-rest day card has one compact "Status ▾" button; clicking it opens a small dropdown menu below it — "✓ Done" (forest), "✗ Missed" (summit red), and "↺ Clear" (only when a status is set; resets to neutral) — with click-outside to close. After picking, the button shows the chosen state in its color (still clickable to change until the day is finished). Selections persist immediately via `PATCH /api/plan` (statuses live inside the plan JSON).
 - Today's card (matched by weekday name) is highlighted (forest border + ring) with a "TODAY" badge and a "Finish today" button.
 - "Finish today" → one-tap load question ("Today's load felt: lighter / about right / heavier than planned", skippable). Then: unlabeled tasks are marked missed, the day is locked (`finished: true`), and one log is written via `POST /api/track-progress` (`data.source: "daily_checkin"` with completed/missed lists + load_feel).
 - If nothing was missed (and load wasn't "heavier") → footer shows "✓ Day complete — nice climbing", no conversation. If tasks were missed OR the load felt heavier → the `MiniGuideChat` panel opens on the same page (no navigation): the guide auto-creates a "Daily check-in — {day}" chat and asks what got in the way (one question at a time; on a clean-but-heavy day, one light "which task ran long?" question instead), stores reasons as memories, and can propose a plan adjustment.
 - Schedule grid always shows all 7 day columns (Mon–Sun, `lg:grid-cols-7`), centered day name at top (+ inline TODAY badge). Days without planned tasks show a muted "No task today" mini-card; rest days show the rest task in the same muted style. Each task renders as its own bordered mini-card (rounded-xl): priority dot + task text on top, bottom row = status control (left) + duration (right). No strikethrough on done tasks — the tag carries the state.
 - Finished days render read-only status tags. Today's finished card shows a subtle "Reopen" link next to "✓ Day complete" — it unlocks the day (clears `finished` + `load_feel`, keeps task statuses) so statuses can be corrected and the day re-finished. Re-finishing writes an additional progress log; earlier logs are not removed.
 
-**Week rollover:** clicking "New Plan"/"Generate" when a plan already exists first fires `POST /api/reflect { auto: true }` (best-effort) so the Reflection Agent reviews the finished week from its data, then generates the new plan — which reads that reflection + memories for adjustments.
+**Changing the plan:** the header button is "Generate Plan" (+ available time/constraints form) only when no plan exists yet. Once a plan exists, the button becomes **"Discuss plan with AI"** — it opens `MiniGuideChat` in plan-talk mode with a summary of the current week; the guide asks what to change and regenerates the plan via its `propose_plan` action. The schedule on the page refreshes live (`refreshKey` prop bumped by the overview page) and a "✓ Your weekly plan is updated" note appears in the chat. There is no manual regenerate form for existing plans.
+
+**Week rollover:** auto-reflection now runs server-side inside `POST /api/plan` — if the previous plan has no reflection newer than it, the Reflection Agent runs first (best-effort), so every plan-generation path (first form, mini chat, full guide) learns from the finished week.
 
 ### ~~`ProgressTracker`~~ (removed)
 
@@ -348,7 +350,9 @@ The manual "+ Log Progress" form is gone. Progress logging now happens automatic
 
 ### `MiniGuideChat`
 
-Docked chat panel on the Mountain Overview page — the guide "comes to the user" instead of forcing a jump to the AI Guide page. Rendered by the overview page when `PlanView`'s daily check-in fires `onDailyReview`.
+Docked chat panel on the Mountain Overview page — the guide "comes to the user" instead of forcing a jump to the AI Guide page. Two modes, passed as a `context` prop:
+- `daily_review` — opened by the daily check-in (missed tasks or heavier load); guide asks what got in the way
+- `plan_talk` — opened by the "Discuss plan with AI" button; guide receives a summary of the current week, asks what to change, and its `propose_plan` action regenerates the plan **inline** (POST `/api/plan` from the panel), fires `onPlanUpdated` so the schedule refreshes behind the chat, and shows a "✓ plan updated" note bubble. `advance_milestone` still defers to the full AI Guide via the proposal button.
 
 - Fixed bottom-right, 360×480, rounded-2xl, deep layered shadow, z-50
 - Header (cream `#FBF8F1`): forest circle guide icon + "Your guide" + "Daily check-in — {day}" subtitle + **expand icon** (top-right, arrows-out → navigates to `/guide?mountain_id=…&chat_id=…`, which auto-opens the same conversation) + close (×)

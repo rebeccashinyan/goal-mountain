@@ -50,6 +50,16 @@ const priorityDot: Record<string, string> = {
   low: "bg-forest-300",
 };
 
+const WEEK_DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
 const loadFeelOptions: { value: string; label: string }[] = [
   { value: "lighter", label: "Lighter than planned" },
   { value: "about_right", label: "About right" },
@@ -370,127 +380,130 @@ export default function PlanView({
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
-                {plan.plan.schedule.map((day) => {
+                {WEEK_DAYS.map((dayName) => {
+                  const day = plan.plan.schedule?.find((d) => d.day === dayName);
+                  const tasks = day?.tasks ?? [];
                   const isRest =
-                    !day.tasks.length ||
-                    (day.tasks.length === 1 &&
-                      day.tasks[0].task.toLowerCase().includes("rest"));
-                  const isToday = day.day === todayName;
-                  const canCheckIn = !isRest && !day.finished;
+                    !tasks.length ||
+                    (tasks.length === 1 &&
+                      tasks[0].task.toLowerCase().includes("rest"));
+                  const isToday = dayName === todayName;
+                  const canCheckIn = !!day && !isRest && !day.finished;
 
                   return (
                     <div
-                      key={day.day}
-                      className={`rounded-2xl p-4 border ${
-                        isRest
-                          ? "bg-[#FBF8F1] border-[#E7E0D7]"
-                          : isToday
-                            ? "bg-white border-forest-300 ring-2 ring-forest-100"
-                            : "bg-white border-[#E7E0D7]"
+                      key={dayName}
+                      className={`rounded-2xl p-3 border bg-white ${
+                        isToday
+                          ? "border-forest-300 ring-2 ring-forest-100"
+                          : "border-[#E7E0D7]"
                       }`}
                       style={{ boxShadow: isRest ? "none" : cardShadow }}
                     >
-                      <div className="flex items-center justify-between mb-2.5">
+                      <div className="mb-2.5 flex items-center justify-center gap-1.5">
                         <p
                           className={`text-xs font-semibold uppercase tracking-wide ${isRest ? "text-stone-300" : "text-stone-500"}`}
                         >
-                          {day.day.slice(0, 3)}
+                          {dayName.slice(0, 3)}
                         </p>
-                        {isToday && !isRest && (
+                        {isToday && (
                           <span className="text-[9px] font-bold uppercase tracking-widest text-forest-700 bg-forest-50 px-1.5 py-0.5 rounded">
                             Today
                           </span>
                         )}
                       </div>
-                      {day.tasks.length ? (
-                        <div className="space-y-2.5">
-                          {day.tasks.map((task, i) => (
-                            <div key={i} className="flex items-start gap-2">
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${priorityDot[task.priority] || "bg-stone-300"}`}
-                              />
-                              <div className="min-w-0">
-                                <p
-                                  className={`text-xs leading-relaxed ${isRest ? "text-stone-400" : task.status === "done" ? "text-stone-400 line-through decoration-forest-400" : "text-stone-700"}`}
-                                >
-                                  {task.task}
-                                </p>
-                                <p className="text-[10px] text-stone-400 mt-0.5">
-                                  {task.duration}
-                                </p>
-                                {!isRest && (
-                                  day.finished ? (
-                                    task.status && (
-                                      <span
-                                        className={`mt-1 inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${task.status === "done" ? "bg-forest-50 text-forest-700" : "bg-red-50 text-summit"}`}
-                                      >
-                                        {task.status === "done" ? "✓ Done" : "✗ Missed"}
-                                      </span>
-                                    )
+                      {!isRest ? (
+                        <div className="space-y-2">
+                          {tasks.map((task, i) => (
+                            <div
+                              key={i}
+                              className="rounded-xl border border-[#E7E0D7] bg-white p-2.5"
+                            >
+                              <p className="text-xs font-medium leading-relaxed text-stone-700">
+                                <span
+                                  className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle ${priorityDot[task.priority] || "bg-stone-300"}`}
+                                />
+                                {task.task}
+                              </p>
+                              <div className="mt-2 flex items-center justify-between gap-2">
+                                {day?.finished ? (
+                                  task.status ? (
+                                    <span
+                                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${task.status === "done" ? "bg-forest-50 text-forest-700" : "bg-red-50 text-summit"}`}
+                                    >
+                                      {task.status === "done" ? "✓ Done" : "✗ Missed"}
+                                    </span>
                                   ) : (
-                                    <div className="relative mt-1 w-fit">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setOpenPicker(openPicker === `${day.day}-${i}` ? null : `${day.day}-${i}`)
-                                        }
-                                        aria-haspopup="menu"
-                                        aria-expanded={openPicker === `${day.day}-${i}`}
-                                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition-colors duration-200 active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 ${
-                                          task.status === "done"
-                                            ? "bg-forest-50 border-forest-200 text-forest-700 hover:border-forest-300"
-                                            : task.status === "missed"
-                                              ? "bg-red-50 border-red-200 text-summit hover:border-red-300"
-                                              : "border-stone-200 text-stone-400 hover:border-forest-300 hover:text-forest-700"
-                                        }`}
-                                      >
-                                        {task.status === "done" ? "✓ Done" : task.status === "missed" ? "✗ Missed" : "Status"} ▾
-                                      </button>
-                                      {openPicker === `${day.day}-${i}` && (
-                                        <>
+                                    <span />
+                                  )
+                                ) : (
+                                  <div className="relative w-fit">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setOpenPicker(openPicker === `${dayName}-${i}` ? null : `${dayName}-${i}`)
+                                      }
+                                      aria-haspopup="menu"
+                                      aria-expanded={openPicker === `${dayName}-${i}`}
+                                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition-colors duration-200 active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 ${
+                                        task.status === "done"
+                                          ? "bg-forest-50 border-forest-200 text-forest-700 hover:border-forest-300"
+                                          : task.status === "missed"
+                                            ? "bg-red-50 border-red-200 text-summit hover:border-red-300"
+                                            : "border-stone-200 text-stone-400 hover:border-forest-300 hover:text-forest-700"
+                                      }`}
+                                    >
+                                      {task.status === "done" ? "✓ Done" : task.status === "missed" ? "✗ Missed" : "Status"} ▾
+                                    </button>
+                                    {openPicker === `${dayName}-${i}` && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          aria-label="Close menu"
+                                          className="fixed inset-0 z-10 cursor-default"
+                                          onClick={() => setOpenPicker(null)}
+                                        />
+                                        <div
+                                          role="menu"
+                                          className="absolute left-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-xl border border-[#E7E0D7] bg-white"
+                                          style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                                        >
                                           <button
                                             type="button"
-                                            aria-label="Close menu"
-                                            className="fixed inset-0 z-10 cursor-default"
-                                            onClick={() => setOpenPicker(null)}
-                                          />
-                                          <div
-                                            role="menu"
-                                            className="absolute left-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-xl border border-[#E7E0D7] bg-white"
-                                            style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                                            role="menuitem"
+                                            onClick={() => setTaskStatus(dayName, i, "done")}
+                                            className="block w-full border-b border-[#E7E0D7] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
                                           >
-                                            <button
-                                              type="button"
-                                              role="menuitem"
-                                              onClick={() => setTaskStatus(day.day, i, "done")}
-                                              className="block w-full border-b border-[#E7E0D7] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
-                                            >
-                                              ✓ Done
-                                            </button>
-                                            <button
-                                              type="button"
-                                              role="menuitem"
-                                              onClick={() => setTaskStatus(day.day, i, "missed")}
-                                              className="block w-full px-3 py-2 text-left text-[11px] font-semibold text-summit hover:bg-red-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
-                                            >
-                                              ✗ Missed
-                                            </button>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  )
+                                            ✓ Done
+                                          </button>
+                                          <button
+                                            type="button"
+                                            role="menuitem"
+                                            onClick={() => setTaskStatus(dayName, i, "missed")}
+                                            className="block w-full px-3 py-2 text-left text-[11px] font-semibold text-summit hover:bg-red-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                          >
+                                            ✗ Missed
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
                                 )}
+                                <p className="shrink-0 text-[10px] text-stone-400">
+                                  {task.duration}
+                                </p>
                               </div>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-xs text-stone-300 italic">Rest</p>
+                        <div className="rounded-xl border border-[#E7E0D7] bg-[#FBF8F1] px-2 py-2.5 text-center text-[11px] text-stone-400">
+                          {tasks.length ? tasks[0].task : "No task today"}
+                        </div>
                       )}
 
                       {/* Day footer: finish flow */}
-                      {day.finished && !isRest && (
+                      {day?.finished && !isRest && (
                         <div className="mt-3 flex items-center justify-between gap-2">
                           <p className="text-[11px] font-semibold text-forest-700">
                             ✓ Day complete — nice climbing
@@ -498,7 +511,7 @@ export default function PlanView({
                           {isToday && (
                             <button
                               type="button"
-                              onClick={() => reopenDay(day.day)}
+                              onClick={() => reopenDay(dayName)}
                               className="shrink-0 text-[10px] font-medium text-stone-400 hover:text-forest-700 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
                             >
                               Reopen
@@ -506,16 +519,16 @@ export default function PlanView({
                           )}
                         </div>
                       )}
-                      {canCheckIn && isToday && finishingDay !== day.day && (
+                      {canCheckIn && isToday && finishingDay !== dayName && (
                         <button
                           type="button"
-                          onClick={() => setFinishingDay(day.day)}
+                          onClick={() => setFinishingDay(dayName)}
                           className="mt-3 w-full text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-forest-700 text-white hover:bg-forest-600 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
                         >
                           Finish today
                         </button>
                       )}
-                      {canCheckIn && finishingDay === day.day && (
+                      {canCheckIn && finishingDay === dayName && (
                         <div className="mt-3 space-y-1">
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">
                             Today&apos;s load felt:
@@ -525,7 +538,7 @@ export default function PlanView({
                               key={opt.value}
                               type="button"
                               disabled={savingDay}
-                              onClick={() => finishDay(day.day, opt.value)}
+                              onClick={() => finishDay(dayName, opt.value)}
                               className="w-full text-[11px] font-medium px-2 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:border-forest-300 hover:text-forest-800 hover:bg-forest-50 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
                             >
                               {opt.label}
@@ -534,7 +547,7 @@ export default function PlanView({
                           <button
                             type="button"
                             disabled={savingDay}
-                            onClick={() => finishDay(day.day)}
+                            onClick={() => finishDay(dayName)}
                             className="w-full text-[11px] text-stone-400 hover:text-stone-600 py-1 disabled:opacity-40 transition-colors duration-200"
                           >
                             Skip

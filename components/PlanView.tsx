@@ -383,6 +383,15 @@ export default function PlanView({
                       tasks[0].task.toLowerCase().includes("rest"));
                   const isToday = dayName === todayName;
                   const canCheckIn = !!day && !isRest && !day.finished;
+                  const isFuture = WEEK_DAYS.indexOf(dayName) > WEEK_DAYS.indexOf(todayName);
+
+                  const pill = day?.finished || (isRest && !isFuture)
+                    ? { text: "✓ Day complete", cls: "bg-forest-50 text-forest-700" }
+                    : isFuture
+                      ? { text: "Upcoming", cls: "bg-stone-100 text-stone-400" }
+                      : isToday
+                        ? { text: "In progress", cls: "bg-amber-50 text-amber-700" }
+                        : { text: "Not logged", cls: "bg-stone-100 text-stone-500" };
 
                   return (
                     <div
@@ -394,7 +403,7 @@ export default function PlanView({
                       }`}
                       style={{ boxShadow: isRest ? "none" : cardShadow }}
                     >
-                      <div className="mb-2.5 flex items-center justify-center gap-1.5">
+                      <div className="mb-1.5 flex items-center justify-center gap-1.5">
                         <p
                           className={`text-xs font-semibold uppercase tracking-wide ${isRest ? "text-stone-300" : "text-stone-500"}`}
                         >
@@ -405,6 +414,11 @@ export default function PlanView({
                             Today
                           </span>
                         )}
+                      </div>
+                      <div className="mb-2.5 flex justify-center">
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${pill.cls}`}>
+                          {pill.text}
+                        </span>
                       </div>
                       {!isRest ? (
                         <div className="space-y-2">
@@ -507,20 +521,15 @@ export default function PlanView({
                       )}
 
                       {/* Day footer: finish flow */}
-                      {day?.finished && !isRest && (
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-semibold text-forest-700">
-                            ✓ Day complete — nice climbing
-                          </p>
-                          {isToday && (
-                            <button
-                              type="button"
-                              onClick={() => reopenDay(dayName)}
-                              className="shrink-0 text-[10px] font-medium text-stone-400 hover:text-forest-700 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
-                            >
-                              Reopen
-                            </button>
-                          )}
+                      {day?.finished && !isRest && isToday && (
+                        <div className="mt-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => reopenDay(dayName)}
+                            className="text-[10px] font-medium text-stone-400 hover:text-forest-700 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                          >
+                            Reopen day
+                          </button>
                         </div>
                       )}
                       {canCheckIn && isToday && finishingDay !== dayName && (

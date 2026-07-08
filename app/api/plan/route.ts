@@ -134,6 +134,32 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
   return Response.json({ ...data, adjustments: result.adjustments || [] });
 }
 
+// Update a plan's JSON in place — used by the daily check-in to persist
+// per-task done/missed statuses, day finished flags, and load feedback
+export async function PATCH(request: Request) {
+  const { plan_id, plan } = await request.json();
+
+  if (!plan_id || !plan) {
+    return Response.json(
+      { error: "plan_id and plan are required" },
+      { status: 400 }
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("weekly_plans")
+    .update({ plan })
+    .eq("id", plan_id)
+    .select()
+    .single();
+
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  return Response.json(data);
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mountain_id = searchParams.get("mountain_id");

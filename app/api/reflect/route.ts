@@ -2,11 +2,11 @@ import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
-  const { mountain_id, user_input } = await request.json();
+  const { mountain_id, user_input, auto } = await request.json();
 
-  if (!mountain_id || !user_input) {
+  if (!mountain_id || (!user_input && !auto)) {
     return Response.json(
-      { error: "mountain_id and user_input are required" },
+      { error: "mountain_id and either user_input or auto are required" },
       { status: 400 }
     );
   }
@@ -41,7 +41,27 @@ export async function POST(request: Request) {
     .eq("mountain_id", mountain_id)
     .in("category", ["motivation", "obstacle", "behavior_pattern"]);
 
+  // Auto mode: reflect from the week's actual data (per-task done/missed
+  // statuses and daily load feedback live inside the latest plan's JSON)
+  const { data: latestPlans } = auto
+    ? await supabase
+        .from("weekly_plans")
+        .select("week_start, plan, priority_recommendation")
+        .eq("mountain_id", mountain_id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+    : { data: null };
+  const latestPlan = latestPlans?.[0];
+
   const currentMilestone = mountain.milestones[mountain.current_milestone_index];
+
+  const reflectionInputSection = auto
+    ? `No manual reflection input — this is an AUTOMATIC weekly review. Infer what worked, what failed, and blockers from the week's plan and activity data below. Do not invent details that the data doesn't support; if the data is thin, keep the reflection short and honest.
+
+This week's plan with per-task statuses ("done"/"missed"), day "finished" flags, and "load_feel" feedback (lighter/about_right/heavier than planned):
+${JSON.stringify(latestPlan || "No plan this week")}`
+    : `User's weekly reflection input:
+${JSON.stringify(user_input)}`;
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -91,8 +111,7 @@ Summit: ${mountain.summit}
 Current camp: ${currentMilestone?.name || "Getting started"}
 Progress: ${mountain.progress}%
 
-User's weekly reflection input:
-${JSON.stringify(user_input)}
+${reflectionInputSection}
 
 Recent activity (last 14 logs):
 ${JSON.stringify(recentLogs?.map((l: { log_type: string; data: Record<string, unknown>; created_at: string }) => ({ type: l.log_type, data: l.data, date: l.created_at })) || [])}
@@ -125,7 +144,7 @@ ${memories?.map((m: { content: string }) => m.content).join("; ") || "None yet"}
     .insert({
       mountain_id,
       week_start: weekStart,
-      user_input,
+      user_input: user_input || { auto: true },
       summary: result.summary || "",
       lessons_learned: result.lessons_learned || [],
       blockers: result.blockers || [],

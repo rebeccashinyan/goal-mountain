@@ -6,7 +6,6 @@ import Link from "next/link";
 import MountainViz from "@/components/MountainViz";
 import PlanView from "@/components/PlanView";
 import ProgressTracker from "@/components/ProgressTracker";
-import ReflectionView from "@/components/ReflectionView";
 
 interface MountainMilestone {
   name: string;
@@ -108,7 +107,6 @@ function MountainContent() {
         mountainId={mountain.id}
         onProgressLogged={fetchMountain}
       />
-      <ReflectionView mountainId={mountain.id} />
     </div>
   );
 }

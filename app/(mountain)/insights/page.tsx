@@ -246,9 +246,6 @@ function InsightsContent() {
             <h2 className="mt-1 text-3xl font-bold text-forest-950">
               Insights for {mountain.goal}
             </h2>
-            <p className="mt-1 max-w-2xl text-sm text-stone-500">
-              Skill gaps, resources, risks, and opportunities for the current stage of this climb.
-            </p>
           </div>
         </div>
         <Link

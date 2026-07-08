@@ -197,11 +197,9 @@ app/
 2. **Mountain Visualization** (full-width, rounded-3xl, bg-white, p-3 md:p-5)
    - `MountainViz` component — SVG mountain with milestone markers
 
-3. **This Week's Plan** — `PlanView` component
+3. **This Week's Plan** — `PlanView` component (includes daily check-in + automatic week-in-review; there is no manual reflection form anymore)
 
 4. **Progress Tracker** — `ProgressTracker` component
-
-5. **Reflection** — `ReflectionView` component
 
 ---
 
@@ -334,7 +332,16 @@ Design (blue expedition-map style):
 
 ### `PlanView`
 
-Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Shows: "Priority This Week" card (full-width), day-by-day schedule with priority dots + difficulty chip, and "Adjustments from last week" when present. (Next best action, strategy notes, and focus area are returned by the API but not displayed.)
+Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Shows: "Week in Review" card (latest auto-reflection summary + up to 3 lessons, only when < 10 days old), "Priority This Week" card, day-by-day schedule, and "Adjustments from last week" when present. (Next best action, strategy notes, and focus area are returned by the API but not displayed.)
+
+**Daily check-in flow:**
+- Every task in a non-rest day card has two toggle chips: "✓ Done" (forest) / "✗ Missed" (summit red). Taps persist immediately via `PATCH /api/plan` (statuses live inside the plan JSON).
+- Today's card (matched by weekday name) is highlighted (forest border + ring) with a "TODAY" badge and a "Finish today" button.
+- "Finish today" → one-tap load question ("Today's load felt: lighter / about right / heavier than planned", skippable). Then: unlabeled tasks are marked missed, the day is locked (`finished: true`), and one log is written via `POST /api/track-progress` (`data.source: "daily_checkin"` with completed/missed lists + load_feel).
+- If nothing was missed → footer shows "✓ Day complete — nice climbing". If tasks were missed → context is stashed in sessionStorage (`guide_daily_review`) and the user is routed to `/guide?mountain_id=…&daily_review=1`, where the guide auto-creates a "Daily check-in — {day}" chat and asks what got in the way (one question at a time), stores the reason as memory, and can propose a plan adjustment.
+- Finished days render read-only status tags; done tasks get a strikethrough.
+
+**Week rollover:** clicking "New Plan"/"Generate" when a plan already exists first fires `POST /api/reflect { auto: true }` (best-effort) so the Reflection Agent reviews the finished week from its data, then generates the new plan — which reads that reflection + memories for adjustments.
 
 ### `ProgressTracker`
 
@@ -346,9 +353,9 @@ Minimal inline log form on the Overview page. Collapsed by default — shows onl
 - Posts to `POST /api/track-progress`. `onProgressLogged` callback refreshes the parent mountain page (updates header card progress %, MountainViz).
 - No analysis output shown here — that belongs on Insights.
 
-### `ReflectionView`
+### ~~`ReflectionView`~~ (removed)
 
-Reflection entry point on the Overview page. Shows last reflection date + 2-line summary. "Open Reflection" / "Start Reflection" button. Full reflection form posts to `POST /api/reflect`.
+The manual weekly reflection form is gone. Reflection now runs automatically: `PlanView` calls `POST /api/reflect { auto: true }` before generating a new week's plan, and shows the result as a "Week in Review" card. See `PlanView`.
 
 ### `CreateMountainModal`
 

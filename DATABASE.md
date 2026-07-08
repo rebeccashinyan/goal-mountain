@@ -78,7 +78,7 @@ Planning + Strategy Agent output. One row per planning session (multiple per mou
 | `id` | uuid PK | gen_random_uuid() | — |
 | `mountain_id` | uuid FK → mountains.id ON DELETE CASCADE | — | — |
 | `week_start` | date NOT NULL | — | Monday of the week this plan was generated for |
-| `plan` | jsonb | `{}` | Full schedule — `{ schedule: [{ day, tasks: [{ task, duration, priority }] }], focus_area, difficulty_level }` |
+| `plan` | jsonb | `{}` | Full schedule — `{ schedule: [{ day, tasks: [{ task, duration, priority, status? }], finished?, load_feel? }], focus_area, difficulty_level }`. Daily check-in writes `status: "done"\|"missed"` per task, plus `finished: true` and `load_feel: "lighter"\|"about_right"\|"heavier"` per day (via `PATCH /api/plan`) |
 | `priority_recommendation` | text | null | The single most important thing to do this week |
 | `next_best_action` | text | null | The very next thing to do right now |
 | `strategy_notes` | text | null | Broader strategic thinking about the user's trajectory |
@@ -119,7 +119,7 @@ Weekly reflection entries, one per week per mountain.
 | `id` | uuid PK | gen_random_uuid() | — |
 | `mountain_id` | uuid FK → mountains.id ON DELETE CASCADE | — | — |
 | `week_start` | date NOT NULL | — | Monday of the week being reflected on |
-| `user_input` | jsonb NOT NULL | `{}` | Raw reflection input from the user (freeform questions + answers) |
+| `user_input` | jsonb NOT NULL | `{}` | `{ auto: true }` for automatic weekly reviews (the default flow — synthesized from plan statuses + logs); legacy rows hold raw manual form input |
 | `summary` | text | null | 2–3 sentence AI-generated reflection summary |
 | `lessons_learned` | jsonb | `[]` | Array of strings |
 | `blockers` | jsonb | `[]` | Array of `{ blocker, frequency, suggestion }` objects |
@@ -234,6 +234,7 @@ All child rows are deleted when a mountain is deleted (ON DELETE CASCADE).
 | POST | `/api/research` | research (post-mode only) | mountains, research, memory |
 | GET | `/api/research` | — | research |
 | POST | `/api/plan` | weekly_plans | mountains, weekly_plans, progress_logs, memory |
+| PATCH | `/api/plan` | weekly_plans (plan jsonb only) | — |
 | GET | `/api/plan` | — | weekly_plans |
 | POST | `/api/track-progress` | progress_logs, mountains | mountains, progress_logs |
 | GET | `/api/track-progress` | — | progress_logs |

@@ -96,6 +96,78 @@ function GuideContent() {
     }
   }, [paramMountainId, checkProactive]);
 
+  // Daily check-in handoff: PlanView's "Finish today" lands here when tasks
+  // were missed — start a chat where the guide asks what got in the way
+  const dailyReviewStarted = useRef(false);
+  useEffect(() => {
+    if (searchParams.get("daily_review") !== "1" || dailyReviewStarted.current) return;
+    const raw = sessionStorage.getItem("guide_daily_review");
+    if (!raw) return;
+    dailyReviewStarted.current = true;
+    sessionStorage.removeItem("guide_daily_review");
+
+    const ctx = JSON.parse(raw) as {
+      mountain_id: string;
+      day: string;
+      completed: string[];
+      missed: string[];
+      load_feel?: string;
+    };
+
+    (async () => {
+      const chatRes = await fetch("/api/chats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mountain_id: ctx.mountain_id,
+          title: `Daily check-in — ${ctx.day}`,
+          type: "user_initiated",
+        }),
+      });
+      if (!chatRes.ok) return;
+      const chat: GuideChat = await chatRes.json();
+      setChats((prev) => [chat, ...prev]);
+      setSelectedChatId(chat.id);
+      setSelectedMountainId(ctx.mountain_id);
+      setPlanProposals({});
+
+      const content = `Finished ${ctx.day}. Completed: ${ctx.completed.length ? ctx.completed.join("; ") : "nothing"}. Missed: ${ctx.missed.join("; ")}.`;
+      setMessages([{
+        id: `temp-${Date.now()}`, chat_id: chat.id, role: "user", content,
+        suggested_replies: [], actions: [], created_at: new Date().toISOString(),
+      }]);
+      setSending(true);
+
+      const loadFeelText =
+        ctx.load_feel === "lighter" ? "The day's load felt lighter than planned."
+        : ctx.load_feel === "heavier" ? "The day's load felt heavier than planned."
+        : ctx.load_feel === "about_right" ? "The day's load felt about right."
+        : "";
+      const initial_context = `Daily check-in for ${ctx.day}. Completed tasks: ${ctx.completed.join("; ") || "none"}. Missed tasks: ${ctx.missed.join("; ")}. ${loadFeelText} Warmly acknowledge what got done, then ask what got in the way of the missed tasks — one question at a time, not an interrogation. Store the reason as a memory, and if the plan needs adjusting based on what the user says, propose a plan adjustment.`;
+
+      try {
+        const res = await fetch(`/api/chats/${chat.id}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content, initial_context }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMessages((prev) => [...prev, {
+            id: `ai-${Date.now()}`, chat_id: chat.id, role: "ai", content: data.reply,
+            suggested_replies: data.suggested_replies || [],
+            actions: (data.actions || []).filter((a: Record<string, unknown>) => a.type !== "propose_plan"),
+            created_at: new Date().toISOString(),
+          }]);
+        }
+      } catch {
+        // silent
+      }
+      setSending(false);
+      fetchChats();
+    })();
+  }, [searchParams, fetchChats]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -278,7 +350,6 @@ function GuideContent() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">AI Compass Guide</p>
             <h2 className="mt-1 text-3xl font-bold text-forest-950">Ask for your next best move</h2>
-            <p className="mt-1 text-sm text-stone-500">One guide, different context. Choose all mountains for life strategy or one mountain for focused coaching.</p>
           </div>
         </div>
         {/* Context selector */}

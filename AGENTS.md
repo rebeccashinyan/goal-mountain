@@ -197,7 +197,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 ## 4. Planning + Strategy Agent
 
-**Route:** `POST /api/plan`, `GET /api/plan`
+**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`
 
 **Purpose:** Generates an adaptive weekly schedule. Accounts for past performance, user constraints, and behavioral patterns from memory.
 
@@ -229,6 +229,14 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 **DB writes:** `weekly_plans`
 
 **GET:** `GET /api/plan?mountain_id=uuid` — returns all plans ordered by date descending.
+
+**PATCH:** `PATCH /api/plan` with `{ plan_id, plan }` — overwrites a plan's `plan` jsonb. Used by the daily check-in UI to persist per-task `status: "done"|"missed"`, per-day `finished: true`, and `load_feel: "lighter"|"about_right"|"heavier"`.
+
+**Daily check-in flow (frontend `PlanView`):**
+1. User labels each task with ✓ Done / ✗ Missed chips (persisted via PATCH on every tap)
+2. "Finish today" on today's card → one-tap load-feel question (skippable)
+3. Unlabeled tasks become missed, day locks (`finished: true`), one log written via Progress Tracking Agent (`data.source: "daily_checkin"`, with `completed`, `missed`, `load_feel`)
+4. All done → "Day complete" celebration, no conversation. Tasks missed → handoff to Guide Agent (`/guide?mountain_id=…&daily_review=1` + sessionStorage `guide_daily_review`): a "Daily check-in — {day}" chat is auto-created and the guide asks what got in the way, stores the reason as memory, and can propose a plan adjustment.
 
 ---
 
@@ -274,9 +282,15 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 **Route:** `POST /api/reflect`, `GET /api/reflect`
 
-**Purpose:** Processes a user's weekly self-reflection. Identifies patterns, blockers, and lessons. Automatically writes insights to the Memory Agent.
+**Purpose:** Reviews the week automatically — there is no manual reflection form anymore. Synthesizes what worked, what failed, and blockers from the week's data: plan task statuses + load-feel feedback (inside the latest `weekly_plans.plan` jsonb), progress logs, and memories. Writes insights to the Memory Agent.
 
-**Input:**
+**Input (auto mode — the default flow):**
+```json
+{ "mountain_id": "uuid", "auto": true }
+```
+Triggered by `PlanView` at week rollover, right before the next weekly plan is generated (so the planner reads the fresh reflection). Stores `user_input` as `{ "auto": true }`.
+
+**Input (legacy manual mode, still accepted):**
 ```json
 {
   "mountain_id": "uuid",
@@ -298,7 +312,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 }
 ```
 
-**DB reads:** `mountains`, `reflections` (last 4), `progress_logs` (last 14), `memory` (motivation, obstacle, behavior_pattern)  
+**DB reads:** `mountains`, `reflections` (last 4), `progress_logs` (last 14), `memory` (motivation, obstacle, behavior_pattern), `weekly_plans` (latest, auto mode only — for task statuses + load_feel)  
 **DB writes:**
 - `reflections` — new reflection row
 - `memory` — auto-writes all entries from `memories_to_store` with `source: "reflection"`

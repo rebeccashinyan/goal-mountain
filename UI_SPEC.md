@@ -338,7 +338,7 @@ Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigg
 - Every task in a non-rest day card has two toggle chips: "✓ Done" (forest) / "✗ Missed" (summit red). Taps persist immediately via `PATCH /api/plan` (statuses live inside the plan JSON).
 - Today's card (matched by weekday name) is highlighted (forest border + ring) with a "TODAY" badge and a "Finish today" button.
 - "Finish today" → one-tap load question ("Today's load felt: lighter / about right / heavier than planned", skippable). Then: unlabeled tasks are marked missed, the day is locked (`finished: true`), and one log is written via `POST /api/track-progress` (`data.source: "daily_checkin"` with completed/missed lists + load_feel).
-- If nothing was missed → footer shows "✓ Day complete — nice climbing". If tasks were missed → context is stashed in sessionStorage (`guide_daily_review`) and the user is routed to `/guide?mountain_id=…&daily_review=1`, where the guide auto-creates a "Daily check-in — {day}" chat and asks what got in the way (one question at a time), stores the reason as memory, and can propose a plan adjustment.
+- If nothing was missed (and load wasn't "heavier") → footer shows "✓ Day complete — nice climbing", no conversation. If tasks were missed OR the load felt heavier → the `MiniGuideChat` panel opens on the same page (no navigation): the guide auto-creates a "Daily check-in — {day}" chat and asks what got in the way (one question at a time; on a clean-but-heavy day, one light "which task ran long?" question instead), stores reasons as memories, and can propose a plan adjustment.
 - Finished days render read-only status tags; done tasks get a strikethrough.
 
 **Week rollover:** clicking "New Plan"/"Generate" when a plan already exists first fires `POST /api/reflect { auto: true }` (best-effort) so the Reflection Agent reviews the finished week from its data, then generates the new plan — which reads that reflection + memories for adjustments.
@@ -352,6 +352,17 @@ Minimal inline log form on the Overview page. Collapsed by default — shows onl
 - On success: brief "✓ Logged" confirmation, auto-collapses after 1.8s
 - Posts to `POST /api/track-progress`. `onProgressLogged` callback refreshes the parent mountain page (updates header card progress %, MountainViz).
 - No analysis output shown here — that belongs on Insights.
+
+### `MiniGuideChat`
+
+Docked chat panel on the Mountain Overview page — the guide "comes to the user" instead of forcing a jump to the AI Guide page. Rendered by the overview page when `PlanView`'s daily check-in fires `onDailyReview`.
+
+- Fixed bottom-right, 360×480, rounded-2xl, deep layered shadow, z-50
+- Header (cream `#FBF8F1`): forest circle guide icon + "Your guide" + "Daily check-in — {day}" subtitle + **expand icon** (top-right, arrows-out → navigates to `/guide?mountain_id=…&chat_id=…`, which auto-opens the same conversation) + close (×)
+- On open: creates a real `guide_chats` row ("Daily check-in — {day}") and sends the day summary with `initial_context`, so the AI speaks first; the full history is visible later in the AI Guide
+- Messages: user bubbles forest-700/white right-aligned, AI bubbles `#F4F1EA` left-aligned; typing indicator (3 bouncing dots); up to 3 suggested-reply chips
+- `propose_plan` / `advance_milestone` actions render as a "Your guide has a proposal — review it in the AI Guide →" button (complex action cards live only in the full guide)
+- Connection failure → friendly fallback bubble; input disabled
 
 ### ~~`ReflectionView`~~ (removed)
 

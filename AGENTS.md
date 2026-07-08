@@ -236,7 +236,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 1. User labels each task with ✓ Done / ✗ Missed chips (persisted via PATCH on every tap)
 2. "Finish today" on today's card → one-tap load-feel question (skippable)
 3. Unlabeled tasks become missed, day locks (`finished: true`), one log written via Progress Tracking Agent (`data.source: "daily_checkin"`, with `completed`, `missed`, `load_feel`)
-4. All done → "Day complete" celebration, no conversation. Tasks missed → handoff to Guide Agent (`/guide?mountain_id=…&daily_review=1` + sessionStorage `guide_daily_review`): a "Daily check-in — {day}" chat is auto-created and the guide asks what got in the way, stores the reason as memory, and can propose a plan adjustment.
+4. All done (and load not "heavier") → "Day complete" celebration, no conversation. Tasks missed OR load felt heavier → the `MiniGuideChat` panel opens on the overview page itself: a "Daily check-in — {day}" `guide_chats` row is created and the guide asks what got in the way (or, on a clean-but-heavy day, one light "which task ran long?" question), stores reasons as memories, and can propose a plan adjustment. The panel's expand icon opens the same conversation in the full AI Guide (`/guide?mountain_id=…&chat_id=…`).
 
 ---
 

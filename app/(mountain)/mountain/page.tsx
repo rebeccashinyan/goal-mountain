@@ -6,6 +6,7 @@ import Link from "next/link";
 import MountainViz from "@/components/MountainViz";
 import PlanView from "@/components/PlanView";
 import ProgressTracker from "@/components/ProgressTracker";
+import MiniGuideChat, { type DailyReviewContext } from "@/components/MiniGuideChat";
 
 interface MountainMilestone {
   name: string;
@@ -27,6 +28,7 @@ function MountainContent() {
   const id = searchParams.get("id");
   const [mountain, setMountain] = useState<MountainData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dailyReview, setDailyReview] = useState<DailyReviewContext | null>(null);
 
   const fetchMountain = useCallback(async () => {
     if (id) {
@@ -102,11 +104,18 @@ function MountainContent() {
           currentMilestoneIndex={mountain.current_milestone_index}
         />
       </div>
-      <PlanView mountainId={mountain.id} />
+      <PlanView mountainId={mountain.id} onDailyReview={setDailyReview} />
       <ProgressTracker
         mountainId={mountain.id}
         onProgressLogged={fetchMountain}
       />
+      {dailyReview && (
+        <MiniGuideChat
+          mountainId={mountain.id}
+          review={dailyReview}
+          onClose={() => setDailyReview(null)}
+        />
+      )}
     </div>
   );
 }

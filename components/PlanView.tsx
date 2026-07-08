@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import type { DailyReviewContext } from "./MiniGuideChat";
 
 type TaskStatus = "done" | "missed";
 
@@ -63,8 +63,13 @@ const loadFeelOptions: { value: string; label: string }[] = [
   { value: "heavier", label: "Heavier than planned" },
 ];
 
-export default function PlanView({ mountainId }: { mountainId: string }) {
-  const router = useRouter();
+export default function PlanView({
+  mountainId,
+  onDailyReview,
+}: {
+  mountainId: string;
+  onDailyReview?: (ctx: DailyReviewContext) => void;
+}) {
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [reflection, setReflection] = useState<ReflectionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -193,13 +198,10 @@ export default function PlanView({ mountainId }: { mountainId: string }) {
     setFinishingDay(null);
     setSavingDay(false);
 
-    // Something was missed → the guide asks what got in the way
-    if (missed.length) {
-      sessionStorage.setItem(
-        "guide_daily_review",
-        JSON.stringify({ mountain_id: mountainId, day: dayName, completed, missed, load_feel: loadFeel })
-      );
-      router.push(`/guide?mountain_id=${mountainId}&daily_review=1`);
+    // The guide checks in right here on the page: always when something was
+    // missed, and also on a clean day that felt heavier than planned
+    if (missed.length || loadFeel === "heavier") {
+      onDailyReview?.({ day: dayName, completed, missed, load_feel: loadFeel });
     }
   }
 

@@ -365,6 +365,7 @@ Triggered server-side by `POST /api/plan` at week rollover: before generating, t
 **Routes:**
 - `GET /api/chats` — list all guide chats (optionally filter by `?mountain_id=uuid`)
 - `POST /api/chats` — create a new guide chat (`{ mountain_id, title, type }`)
+- `DELETE /api/chats?id=uuid` — delete a chat (its messages cascade)
 - `GET /api/chats/[id]/messages` — fetch all messages in a chat
 - `POST /api/chats/[id]/messages` — send a message, get AI reply with actions
 - `POST /api/proactive` — detect inactivity, create AI-proactive chat if conditions met

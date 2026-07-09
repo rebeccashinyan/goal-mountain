@@ -261,6 +261,19 @@ function GuideContent() {
   const proactiveChats = contextChats.filter((c) => c.type === "ai_proactive");
   const userChats = contextChats.filter((c) => c.type === "user_initiated");
 
+  async function deleteChat(chatId: string, title: string) {
+    if (!window.confirm(`Delete "${title}"? This can't be undone.`)) return;
+    const res = await fetch(`/api/chats?id=${chatId}`, { method: "DELETE" });
+    if (res.ok) {
+      setChats((prev) => prev.filter((c) => c.id !== chatId));
+      if (selectedChatId === chatId) {
+        setSelectedChatId(null);
+        setMessages([]);
+        setPlanProposals({});
+      }
+    }
+  }
+
   const PROACTIVE_PREVIEW = 4;
   const filteredProactive = search
     ? proactiveChats.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
@@ -374,22 +387,33 @@ function GuideContent() {
             ) : (
               <div className="space-y-0.5">
                 {visibleProactive.map((chat) => (
-                  <button
-                    key={chat.id}
-                    type="button"
-                    onClick={() => loadChat(chat.id)}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
-                      selectedChatId === chat.id ? "bg-white shadow-sm" : "hover:bg-white/60"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-stone-700 truncate">{chat.title}</p>
-                      {chat.unread && <span className="w-2 h-2 rounded-full bg-[#E07A6E] shrink-0" />}
-                    </div>
-                    {chat.last_message && (
-                      <p className="text-[11px] text-stone-400 truncate mt-0.5 leading-snug">{chat.last_message}</p>
-                    )}
-                  </button>
+                  <div key={chat.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => loadChat(chat.id)}
+                      className={`w-full text-left px-3 py-2.5 pr-8 rounded-xl transition-colors duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
+                        selectedChatId === chat.id ? "bg-white shadow-sm" : "hover:bg-white/60"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-stone-700 truncate">{chat.title}</p>
+                        {chat.unread && <span className="w-2 h-2 rounded-full bg-[#E07A6E] shrink-0" />}
+                      </div>
+                      {chat.last_message && (
+                        <p className="text-[11px] text-stone-400 truncate mt-0.5 leading-snug">{chat.last_message}</p>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteChat(chat.id, chat.title)}
+                      aria-label={`Delete ${chat.title}`}
+                      className="absolute right-1.5 top-1.5 rounded-md p-1 text-stone-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-summit hover:bg-red-50 active:scale-[0.92] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-summit transition-colors duration-150"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4m2 0v9.333a1.333 1.333 0 01-1.334 1.334H4.667a1.333 1.333 0 01-1.334-1.334V4h9.334z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
                 ))}
                 {(hiddenProactiveCount > 0 || (!search && showAllProactive && filteredProactive.length > PROACTIVE_PREVIEW)) && (
                   <button
@@ -414,19 +438,30 @@ function GuideContent() {
             ) : (
               <div className="space-y-0.5">
                 {filteredUser.map((chat) => (
-                  <button
-                    key={chat.id}
-                    type="button"
-                    onClick={() => loadChat(chat.id)}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
-                      selectedChatId === chat.id ? "bg-white shadow-sm" : "hover:bg-white/60"
-                    }`}
-                  >
-                    <p className="text-xs font-semibold text-stone-700 truncate">{chat.title}</p>
-                    {chat.last_message && (
-                      <p className="text-[11px] text-stone-400 truncate mt-0.5 leading-snug">{chat.last_message}</p>
-                    )}
-                  </button>
+                  <div key={chat.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => loadChat(chat.id)}
+                      className={`w-full text-left px-3 py-2.5 pr-8 rounded-xl transition-colors duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
+                        selectedChatId === chat.id ? "bg-white shadow-sm" : "hover:bg-white/60"
+                      }`}
+                    >
+                      <p className="text-xs font-semibold text-stone-700 truncate">{chat.title}</p>
+                      {chat.last_message && (
+                        <p className="text-[11px] text-stone-400 truncate mt-0.5 leading-snug">{chat.last_message}</p>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteChat(chat.id, chat.title)}
+                      aria-label={`Delete ${chat.title}`}
+                      className="absolute right-1.5 top-1.5 rounded-md p-1 text-stone-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-summit hover:bg-red-50 active:scale-[0.92] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-summit transition-colors duration-150"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4m2 0v9.333a1.333 1.333 0 01-1.334 1.334H4.667a1.333 1.333 0 01-1.334-1.334V4h9.334z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
                 ))}
               </div>
             )}

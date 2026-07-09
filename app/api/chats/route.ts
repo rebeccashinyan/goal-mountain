@@ -30,3 +30,16 @@ export async function POST(request: Request) {
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json(data);
 }
+
+// Deleting a chat cascades to its guide_messages via FK
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) return Response.json({ error: "id is required" }, { status: 400 });
+
+  const { error } = await supabase.from("guide_chats").delete().eq("id", id);
+
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  return Response.json({ success: true });
+}

@@ -207,7 +207,7 @@ app/
 
 **Sections:**
 
-1. **Header card** — "Research Agent" eyebrow, "Insights for [goal]", description, "Discuss With AI" button
+1. **Header card** — "Research Agent" eyebrow, "Insights for [goal]", context selector (mountain-only switcher, shown when the user has 2+ mountains; navigates to `/insights?id=…`; no "All Mountains" option — cross-mountain view lives in Analysis), "Discuss With AI" button
 
 2. **Journey Health** — 4-stat bordered row:
    - Current Camp
@@ -281,6 +281,7 @@ app/
 - **"Messages from AI" section** — always visible; shows `ai_proactive` chats with orange unread dot (`#E07A6E`) and last_message preview, collapsed to the 4 most recent with a "Show N more" / "Show less" toggle (search always covers all). If empty: "No messages yet — the AI will reach out if it detects you're off track."
 - **Context selector** (header) — mountain goals truncate at ~48 chars with ellipsis; full goal on hover via `title`. (Intake agent now also keeps `goal` a short headline ≤ ~50 chars; details live in constraints/current_level.)
 - **Context filters the sidebar**: selecting a mountain shows only that mountain's chats + AI messages; "All Mountains" shows everything. Switching context away from the open chat's mountain closes the chat pane.
+- **Chat deletion**: every sidebar item (AI messages and chats) reveals a trash icon on hover → `window.confirm` → `DELETE /api/chats?id=` (messages cascade). Deleting the open chat clears the pane.
 - **"Chats" section** — always visible; shows `user_initiated` chats with title + last_message preview. If empty: "No chats yet. Click 'New Chat' to start."
 - Selected chat highlighted with white bg + shadow
 

@@ -58,7 +58,7 @@ Return a JSON object:
   "reply": "your message to the user",
   "status": "gathering" | "confirming" | "ready",
   "goal_data": null | {
-    "goal": "the refined, specific goal",
+    "goal": "SHORT headline, max ~50 characters — shown as a title all over the UI (e.g. 'AI product design internship — Summer 2027'). Qualifiers like company preferences, visa status, or school belong in constraints/current_level, NOT here",
     "current_level": "dense summary of where they are: experience, school year, relevant facts learned in conversation",
     "target_date": "YYYY-MM-DD or null — use the REAL deadline that should pace the plan (e.g. application season opening), not just the stated goal date",
     "constraints": "everything that shapes the plan: time available, visa/authorization, region, company-type preference, budget, etc."

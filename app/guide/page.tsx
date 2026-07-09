@@ -57,6 +57,7 @@ function GuideContent() {
   const [executingAction, setExecutingAction] = useState(false);
   const [planProposals, setPlanProposals] = useState<Record<string, PlanProposal>>({});
   const [selectedMountainId, setSelectedMountainId] = useState<string | null>(paramMountainId);
+  const [showAllProactive, setShowAllProactive] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -255,9 +256,13 @@ function GuideContent() {
   const proactiveChats = chats.filter((c) => c.type === "ai_proactive");
   const userChats = chats.filter((c) => c.type === "user_initiated");
 
+  const PROACTIVE_PREVIEW = 4;
   const filteredProactive = search
     ? proactiveChats.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
     : proactiveChats;
+  const visibleProactive =
+    search || showAllProactive ? filteredProactive : filteredProactive.slice(0, PROACTIVE_PREVIEW);
+  const hiddenProactiveCount = filteredProactive.length - visibleProactive.length;
   const filteredUser = search
     ? userChats.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
     : userChats;
@@ -353,7 +358,7 @@ function GuideContent() {
               <p className="text-[11px] text-stone-400 px-1">No messages yet — the AI will reach out if it detects you&apos;re off track.</p>
             ) : (
               <div className="space-y-0.5">
-                {filteredProactive.map((chat) => (
+                {visibleProactive.map((chat) => (
                   <button
                     key={chat.id}
                     type="button"
@@ -371,6 +376,15 @@ function GuideContent() {
                     )}
                   </button>
                 ))}
+                {(hiddenProactiveCount > 0 || (!search && showAllProactive && filteredProactive.length > PROACTIVE_PREVIEW)) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllProactive(!showAllProactive)}
+                    className="w-full px-3 py-1.5 text-left text-[11px] font-semibold text-forest-700 hover:text-forest-600 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-150"
+                  >
+                    {showAllProactive ? "Show less" : `Show ${hiddenProactiveCount} more`}
+                  </button>
+                )}
               </div>
             )}
           </div>

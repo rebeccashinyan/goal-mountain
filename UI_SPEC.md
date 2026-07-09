@@ -278,7 +278,8 @@ app/
 **Sidebar (240px, bg-[#FAFAF8], border-r):**
 - "New Chat" button (+ icon, creates a `user_initiated` chat in Supabase)
 - Search input (filters both sections by title)
-- **"Messages from AI" section** — always visible; shows `ai_proactive` chats with orange unread dot (`#E07A6E`) and last_message preview. If empty: "No messages yet — the AI will reach out if it detects you're off track."
+- **"Messages from AI" section** — always visible; shows `ai_proactive` chats with orange unread dot (`#E07A6E`) and last_message preview, collapsed to the 4 most recent with a "Show N more" / "Show less" toggle (search always covers all). If empty: "No messages yet — the AI will reach out if it detects you're off track."
+- **Context selector** (header) — mountain goals truncate at ~48 chars with ellipsis; full goal on hover via `title`. (Intake agent now also keeps `goal` a short headline ≤ ~50 chars; details live in constraints/current_level.)
 - **"Chats" section** — always visible; shows `user_initiated` chats with title + last_message preview. If empty: "No chats yet. Click 'New Chat' to start."
 - Selected chat highlighted with white bg + shadow
 

@@ -384,7 +384,7 @@ Two-view modal:
 - Header: "About Your Plan" eyebrow + goal title + summit
 - Scrollable body with two sections:
   1. What the Research Agent Found: proven stages (numbered), skills (tag chips), pitfalls (warning icons)
-  2. Your Mountain: full milestone list — camps (forest bg + "Camp" badge), checkpoints (white), summit (gold star)
+  2. Your Mountain: full milestone list — uniform rows (forest bg, numbered), summit (gold star)
 - Footer: "Start Climbing →" (navigates to `/mountain?id=`) + "Close" button
 
 ---

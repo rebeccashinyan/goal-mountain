@@ -36,7 +36,7 @@ export async function POST(request: Request) {
         role: "system",
         content: `You are the Mountain Generator Agent for Goal Mountain, an AI-powered goal achievement companion.
 
-When a user shares their goal, you turn it into a structured mountain journey with camps, milestones, checkpoints, and a summit definition.
+When a user shares their goal, you turn it into a structured mountain journey: a single sequence of named milestones (camps) leading to a summit.
 
 Return a JSON object with this exact shape:
 {
@@ -44,26 +44,25 @@ Return a JSON object with this exact shape:
   "summit": "a clear, specific description of what reaching the summit looks like — the measurable success condition",
   "milestones": [
     {
-      "name": "camp or checkpoint name",
+      "name": "specific stage name",
       "description": "1-sentence description of what this milestone involves",
-      "type": "camp" or "checkpoint",
+      "type": "camp",
       "estimated_duration": "e.g. 2 weeks"
     }
   ]
 }
 
 Rules:
-- Create the mountain structure with 4-6 camps (major stages) and 2-3 checkpoints within each camp
+- Create 5-8 milestones. Each one is a meaningful stage of the journey — a real capability or outcome worth celebrating
+- Every milestone name must state the concrete capability or outcome it represents (e.g. "Hold a 15-minute everyday conversation") — never generic labels like "Checkpoint 3" or "Phase 2"
 - Order milestones from base camp (earliest/easiest) to summit (latest/hardest)
-- Each camp should be a meaningful stage of the journey
-- Checkpoints are smaller steps within a camp
 - The last milestone should lead directly to the summit
 - Make milestones specific and actionable, not vague
 - Set a clear summit success condition
 - If user context is provided (current level, target date, constraints), adapt the mountain accordingly
-- Adapt the number and detail of milestones to the goal's complexity
+- Adapt the number and detail of milestones to the goal's complexity, staying within 5-8
 - This system supports ANY goal type: career, fitness, learning, creative, financial, personal growth, etc.
-- If external research context is provided, use it to ground the milestones in real-world knowledge: use the proven stages as the basis for camps, incorporate the identified skill gaps as checkpoint focus areas, use realistic duration estimates from the research, and name things using industry-standard terminology where appropriate`,
+- If external research context is provided, use it to ground the milestones in real-world knowledge: use the proven stages as the basis for milestones, incorporate the identified skill gaps as milestone focus areas, use realistic duration estimates from the research, and name things using industry-standard terminology where appropriate`,
       },
       {
         role: "user",
@@ -89,14 +88,13 @@ Rules:
       m: {
         name: string;
         description: string;
-        type?: string;
         estimated_duration?: string;
       },
       i: number
     ) => ({
       name: m.name,
       description: m.description,
-      type: m.type || "checkpoint",
+      type: "camp",
       estimated_duration: m.estimated_duration || "",
       completed: false,
       current: i === 0,

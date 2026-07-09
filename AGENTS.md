@@ -96,6 +96,8 @@ Agent         Agent
 **Behavior:**
 - Expert-interviewer, not form-filler (model: `gpt-5-mini`; one-shot generator/research/insights agents use `gpt-5.1`, all other agents `gpt-5-mini`): every turn it must fill `analysis` first — what's known + implied (e.g. "summer 2027 internship → applications open fall 2026"), what success at this goal depends on, which deciding factor is still unknown — then ask the ONE highest-value question. Only factual questions about the user's situation (school year, visa status, hours, preferences); never domain judgments ("what skills do you think matter?").
 - Uncertainty handling: "not sure" / a range counts as an answer — the agent adopts a stated assumption and moves on; it only asks for precision when different answers within the plausible range would change the plan.
+- Scope boundary: intake ONLY — its single deliverable is confirmed `goal_data`. It never produces content/artifacts (reviews, code, CSVs, templates), never gives how-to instructions or commands, never designs plans or milestones (that's the Generator/Planning/Guide agents' work). Side questions mid-intake get a 1-2 sentence orientation + "your mountain will map this out" + steer back to confirming.
+- Depth rule: gathers enough to shape the mountain (camps, ordering, pacing) — not enough to execute tasks. Execution-level details (e.g. "does your repo contain API keys") are left as notes in `constraints` for downstream agents. Hard cap: 7 questions, then it must move to confirming.
 - `gathering` — still asking questions, one answerable chunk per reply (may bundle 2-3 tightly-related micro-facts; 3-5 turns total is the norm)
 - `confirming` — has enough info, summarizes including derived implications, asks user to confirm
 - `ready` — user confirmed, `goal_data` is final and can be sent to Research + Generator
@@ -157,7 +159,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 **Route:** `POST /api/generate-mountain`
 
-**Purpose:** Transforms a confirmed goal into a structured mountain (camps, checkpoints, summit). Uses research context when available to ground milestones in real-world knowledge.
+**Purpose:** Transforms a confirmed goal into a structured mountain: a single sequence of 5–8 named milestones leading to a summit. Uses research context when available to ground milestones in real-world knowledge.
 
 **Input:**
 ```json
@@ -175,9 +177,9 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 **Milestone structure:**
 ```json
 {
-  "name": "camp or checkpoint name",
+  "name": "specific stage name (a concrete capability or outcome, never generic labels)",
   "description": "1-sentence description",
-  "type": "camp | checkpoint",
+  "type": "camp",
   "estimated_duration": "e.g. 2 weeks",
   "completed": false,
   "current": true (first only),
@@ -191,8 +193,8 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 - `research` — pre-mountain research data linked to the new mountain_id (so Insights page can display it)
 
 **Research integration:** When `research_context` is present, the system prompt explicitly instructs the model to:
-- Use `proven_stages` as the basis for camps
-- Use `skill_gaps` as checkpoint focus areas
+- Use `proven_stages` as the basis for milestones
+- Use `skill_gaps` as milestone focus areas
 - Use realistic duration estimates from research
 - Use industry-standard terminology
 

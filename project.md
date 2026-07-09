@@ -167,8 +167,7 @@ Conversational intake before a mountain is created. Extracts a structured goal f
 Transforms a confirmed goal into a structured mountain journey. Uses Research Agent output to ground milestones in real-world knowledge.
 
 **Responsibilities**
-- Define camps (major stages)
-- Create checkpoints within each camp
+- Define 5–8 named milestones (single tier — each a meaningful stage worth celebrating)
 - Establish summit criteria
 - Incorporate proven industry stages from the Research Agent
 - Set realistic duration estimates based on research
@@ -310,7 +309,7 @@ Goal Mountain continuously generates insights to help users better understand th
 
 1. User describes their goal in the Mountain Chat (conversational intake)
 2. Research Agent gathers real-world knowledge about the goal (pre-mountain mode)
-3. Mountain Generator creates camps and checkpoints grounded in the research
+3. Mountain Generator creates 5–8 named milestones grounded in the research
 4. "About Your Plan" shows the user what the research found and how the plan is structured
 5. User navigates to their mountain and starts climbing
 6. Planning Agent generates adaptive weekly schedules
@@ -485,7 +484,7 @@ The Insights page was rebuilt to match the intended design with 6 sections:
 
 1. **Research Agent runs first** (`/api/research` now supports pre-mountain mode): called with just a `goal` string (no `mountain_id`). Returns proven stages, key skills, common pitfalls, best resources, and insights. Does not save to DB.
 
-2. **Generator uses research context** (`/api/generate-mountain` now accepts `research_context`): the system prompt explicitly instructs the generator to use proven stages as camp structure, incorporate skill gaps as checkpoint focus areas, use realistic duration estimates from research, and use industry-standard terminology.
+2. **Generator uses research context** (`/api/generate-mountain` now accepts `research_context`): the system prompt explicitly instructs the generator to use proven stages as milestone structure, incorporate skill gaps as milestone focus areas, use realistic duration estimates from research, and use industry-standard terminology.
 
 **Modal UI:** `generateMountain()` in `CreateMountainModal` now chains both steps with a two-step progress indicator (Research → Generate). Research failure is silent and non-blocking.
 
@@ -555,8 +554,8 @@ After the Research + Generate flow completes, instead of immediately navigating 
 
 **What it shows:**
 1. **What the Research Agent found** — Proven stages (numbered, with typical duration), skills to build (tag chips), and top 3 pitfalls to watch out for
-2. **Your Mountain** — Full ordered milestone list with camps highlighted (green bg, "Camp" badge) and checkpoints (white bg), summit shown with gold star
-3. **Summary line** — "X major camps · Y checkpoints · grounded in real-world research"
+2. **Your Mountain** — Full ordered milestone list (green bg, numbered), summit shown with gold star
+3. **Summary line** — "X stages to the summit · grounded in real-world research"
 
 **CTA:**
 - "Start Climbing →" — navigates to `/mountain?id=${mountainId}` via `useRouter`, closes modal

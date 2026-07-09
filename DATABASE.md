@@ -30,9 +30,9 @@ One row per user goal. The central table — all other tables reference this via
 **Milestone shape (each element of `milestones` jsonb array):**
 ```json
 {
-  "name": "Camp / checkpoint name",
+  "name": "Milestone name (a concrete capability or outcome)",
   "description": "1-sentence description",
-  "type": "camp | checkpoint",
+  "type": "camp",
   "estimated_duration": "e.g. 2 weeks",
   "completed": false,
   "current": true,
@@ -41,6 +41,7 @@ One row per user goal. The central table — all other tables reference this via
 ```
 
 **Notes:**
+- Milestones are single-tier as of 2026-07-09: the generator emits 5–8 named stages, all `type: "camp"`. Mountains created earlier may still contain `type: "checkpoint"` entries — treat both types identically when reading. No migration needed.
 - `running_level` and `race_date` are legacy column names — they store generic `current_level` and `target_date` values for any goal type. No migration needed.
 - `milestones` is mutated in-place by the Progress Tracking Agent when milestones complete.
 - `current_milestone_index` is advanced when a milestone completes.

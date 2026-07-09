@@ -299,12 +299,15 @@ function GuideContent() {
           <select
             value={selectedMountainId || "all"}
             onChange={(e) => setSelectedMountainId(e.target.value === "all" ? null : e.target.value)}
-            className="text-sm font-semibold text-forest-900 bg-white rounded-xl border border-[#E7E0D7] px-4 py-2.5 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-100 transition-colors duration-200 cursor-pointer"
+            className="max-w-[320px] truncate text-sm font-semibold text-forest-900 bg-white rounded-xl border border-[#E7E0D7] px-4 py-2.5 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-100 transition-colors duration-200 cursor-pointer"
             style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
+            title={mountains.find((m) => m.id === selectedMountainId)?.goal}
           >
             <option value="all">All Mountains</option>
             {mountains.map((m) => (
-              <option key={m.id} value={m.id}>{m.goal}</option>
+              <option key={m.id} value={m.id}>
+                {m.goal.length > 48 ? m.goal.slice(0, 47).trimEnd() + "…" : m.goal}
+              </option>
             ))}
           </select>
         </div>

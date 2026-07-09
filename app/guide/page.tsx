@@ -253,8 +253,13 @@ function GuideContent() {
     setExecutingAction(false);
   }
 
-  const proactiveChats = chats.filter((c) => c.type === "ai_proactive");
-  const userChats = chats.filter((c) => c.type === "user_initiated");
+  // Sidebar follows the context selector: a specific mountain shows only its
+  // conversations; "All Mountains" shows everything
+  const contextChats = selectedMountainId
+    ? chats.filter((c) => c.mountain_id === selectedMountainId)
+    : chats;
+  const proactiveChats = contextChats.filter((c) => c.type === "ai_proactive");
+  const userChats = contextChats.filter((c) => c.type === "user_initiated");
 
   const PROACTIVE_PREVIEW = 4;
   const filteredProactive = search
@@ -303,7 +308,17 @@ function GuideContent() {
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Context</span>
           <select
             value={selectedMountainId || "all"}
-            onChange={(e) => setSelectedMountainId(e.target.value === "all" ? null : e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value === "all" ? null : e.target.value;
+              setSelectedMountainId(next);
+              // Close the open chat if it doesn't belong to the new context
+              const current = chats.find((c) => c.id === selectedChatId);
+              if (next && current && current.mountain_id !== next) {
+                setSelectedChatId(null);
+                setMessages([]);
+                setPlanProposals({});
+              }
+            }}
             className="max-w-[320px] truncate text-sm font-semibold text-forest-900 bg-white rounded-xl border border-[#E7E0D7] px-4 py-2.5 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-100 transition-colors duration-200 cursor-pointer"
             style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
             title={mountains.find((m) => m.id === selectedMountainId)?.goal}

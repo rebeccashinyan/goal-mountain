@@ -165,7 +165,7 @@ All three layouts render the same `ContextNav` header: a 3-tab icon nav + a cont
 - Grid: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5`
 
 **Mountain card structure:**
-1. Above card: goal title + delete button (top-right, hidden until hover)
+1. Above card: goal title + delete button — the title row reserves a fixed two-line height (`min-h-[44px]`, `line-clamp-2`, full goal in `title` tooltip) so all cards in a row start at the same y; cards stretch to equal height (`flex-1`, progress row pinned with `mt-auto`)
 2. Card body (rounded-2xl, borderless, bg-white, soft shadow — sits on the `#F6F6F6` dashboard background):
    - "Today" label (bold, sentence case — no camp pill)
    - Current task text (or plain placeholder if empty)

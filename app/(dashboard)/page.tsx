@@ -112,31 +112,24 @@ export default function DashboardPage() {
                 </div>
                 <Link
                   href={`/mountain?id=${m.id}`}
-                  className="block overflow-hidden rounded-2xl border border-[#E7E0D7] bg-[#FBF8F1] transition-all duration-200 hover:-translate-y-1 hover:border-forest-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 active:scale-[0.99]"
+                  className="block overflow-hidden rounded-2xl bg-white transition-all duration-200 hover:-translate-y-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 active:scale-[0.99]"
                   style={{
                     boxShadow:
-                      "0 10px 28px rgba(43, 58, 42, 0.08), 0 1px 2px rgba(43, 58, 42, 0.06)",
+                      "0 6px 20px rgba(43, 58, 42, 0.06), 0 1px 2px rgba(43, 58, 42, 0.05)",
                   }}
                 >
                   <div className="px-5 pt-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-400">
-                        Today
-                      </p>
-                      <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-forest-700 ring-1 ring-forest-100">
-                        Camp {Math.min(m.current_milestone_index + 1, Math.max(m.milestones.length, 1))}/{Math.max(m.milestones.length, 1)}
-                      </span>
-                    </div>
-                    <p className="mt-2 min-h-[44px] text-sm font-semibold leading-relaxed text-stone-700">
+                    <p className="text-sm font-bold text-stone-900">Today</p>
+                    <p className="mt-1.5 min-h-[44px] text-[13px] font-medium leading-relaxed text-stone-800">
                       {!m.current_task ? (
-                        <span className="text-stone-400 italic">No task today. Check in with your guide for the next best move.</span>
+                        <span>No task today. Check in with your guide for the next best move.</span>
                       ) : (
                         m.current_task
                       )}
                     </p>
                   </div>
 
-                  <div className="h-[150px] mx-4 mt-2 overflow-hidden rounded-2xl">
+                  <div className="px-6 pt-1">
                     <MiniMountain
                       progress={m.progress}
                       totalSteps={m.milestones.length}
@@ -144,16 +137,14 @@ export default function DashboardPage() {
                     />
                   </div>
 
-                  <div className="px-5 pb-5 pt-3">
-                    <div className="flex items-center justify-end">
-                      <span className="text-lg font-bold text-forest-800">{m.progress}%</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-white ring-1 ring-black/5">
+                  <div className="flex items-center gap-3 px-5 pb-5 pt-3">
+                    <div className="h-2 flex-1 rounded-full bg-[#EDEDEA]">
                       <div
-                        className="h-full rounded-full bg-forest-600"
+                        className="h-full rounded-full bg-[#6FBE8B]"
                         style={{ width: `${Math.max(0, Math.min(m.progress, 100))}%` }}
                       />
                     </div>
+                    <span className="text-[13px] font-bold text-forest-900">{m.progress}%</span>
                   </div>
                 </Link>
               </div>

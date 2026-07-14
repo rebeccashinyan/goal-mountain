@@ -32,8 +32,8 @@ Defined in `app/globals.css` as Tailwind CSS custom properties via `@theme inlin
 | `summit-light` | `#F0ACA4` | Light danger tint |
 
 **Neutral (stone-based):**
-- Background base: `#FAFAF8`
-- Card base: `#FBF8F1`
+- Background base: `#FAFAF8` (mountain + guide layouts); dashboard layout uses `#F6F6F6`
+- Card base: `#FBF8F1` (mountain pages); dashboard mountain cards are pure white `#FFFFFF`, borderless
 - Card border: `#E7E0D7`
 - Body text: `#1c1917` (stone-900)
 - Secondary text: stone-500 (`#78716c`)
@@ -166,12 +166,12 @@ All three layouts render the same `ContextNav` header: a 3-tab icon nav + a cont
 
 **Mountain card structure:**
 1. Above card: goal title + delete button (top-right, hidden until hover)
-2. Card body (rounded-2xl, border, bg-[#FBF8F1]):
-   - Header row: "Today" label + "Camp X/Y" pill
-   - Current task text (or italic placeholder if empty)
-   - `MiniMountain` SVG visualization (h-[150px], rounded inner)
-   - Progress bar + right-aligned percentage (no label)
-3. Card hover: `-translate-y-1`, border changes to `forest-200`
+2. Card body (rounded-2xl, borderless, bg-white, soft shadow — sits on the `#F6F6F6` dashboard background):
+   - "Today" label (bold, sentence case — no camp pill)
+   - Current task text (or plain placeholder if empty)
+   - `MiniMountain` SVG — full card width, intrinsic aspect ratio (no framed box)
+   - One row: progress bar (flex-1, `#6FBE8B` fill on `#EDEDEA` track) + bold percentage at right
+3. Card hover: `-translate-y-1`
 
 **Create Mountain Modal:** Triggered by "+ Create Mountain" button. Full modal with chat interface.
 
@@ -307,7 +307,7 @@ The single header nav used by every layout. Picks the tab set from URL context (
 
 ### `MiniMountain`
 
-Small SVG mountain visualization used on dashboard cards. Props: `progress`, `totalSteps`, `currentStep`.
+Card-sized, label-free rendering of the same expedition map as `MountainViz` (identical fixed trail geometry: compass base camp, bend-pattern route, evenly spaced nodes, summit flag, right ridge, pines, cloud, foothill lines). ViewBox crops to the art (`245 45 815 520` — wider than tall, matching the reference component) with foothill lines extended to fill the wider frame. Node states: completed = green fill + white dot, current = yellow, upcoming = white. No labels, no progress text inside the SVG. Props: `progress` (only to detect 100% = all done), `totalSteps`, `currentStep`.
 
 ### `MountainViz`
 

@@ -626,3 +626,13 @@ The header navigation no longer changes shape between dashboard and mountain pag
 - `TabNav` configs reworked: `allMountainsTabs` + `mountainContextTabs` (each tab has a `section`)
 - All three layouts (`(dashboard)`, `(mountain)`, `guide`) use `ContextNav`; `MountainDetailNav` and `GuideNav` deleted
 - The local mountain switcher in the Insights page header was removed — the global context dropdown replaces it
+
+---
+
+### Dashboard Redesign: White Cards + Expedition-Map Minis (2026-07-14)
+
+The All Mountains page was restyled to match the new prototype:
+
+- **Page background** — dashboard layout is now `#F6F6F6` (chosen over `#F0F0F0`: softer against pure-white cards)
+- **Mountain cards** — pure white (`#FFFFFF`), borderless, soft shadow; camp pill removed; "Today" label in bold sentence case; progress bar and percentage share one row (bar left, bold % right)
+- **`MiniMountain` rebuilt** — the stair-step triangle is gone; the card mini is now a label-free, card-sized rendering of the same expedition map as `MountainViz` (identical trail geometry: compass base camp, green zigzag route with milestone nodes, yellow summit flag, right ridge, pines, cloud, foothills), cropped to a wider-than-tall viewBox to match the reference art

@@ -38,8 +38,13 @@ const BEND_X = [470, 602, 555, 665, 590, 686, 632, 654]; // the trail's 8 bends
 const Y_FIRST = 455; // first milestone row; rows are evenly spaced up to the peak
 
 const NODE_R = 7.5;
-const CONNECTOR_LEN = 86; // short leader, stops just before the node
 const MAX_LABEL_CHARS = 34;
+// Labels form a staircase: the bottom label's right edge sits furthest
+// left, and each label higher up steps rightward. The connector then runs
+// from that right edge across to the (zig-zagging) node.
+const LABEL_R_MIN = 250; // right edge of the bottom-most label
+const LABEL_R_MAX = 548; // right edge of the summit label
+const LABEL_GAP = 12; // space between label text and its connector
 
 // x for milestone i of n, following the bend pattern: with ≤8 milestones
 // each snaps to a real bend (evenly spread); with more, x is interpolated
@@ -171,13 +176,16 @@ export default function MountainViz({ milestones, summit, currentMilestoneIndex 
             the node's exact position; never moves the route or mountain */}
         {nodes.map(([x, y], i) => {
           const meta = metas[i];
-          const connEnd = x - NODE_R - 4;
+          // Staircase right edge for this label, climbing rightward with height
+          const labelRight =
+            LABEL_R_MIN + ((LABEL_R_MAX - LABEL_R_MIN) * i) / (total - 1);
+          const connStart = Math.min(labelRight + LABEL_GAP, x - NODE_R - 20);
           return (
             <g key={i}>
               <title>{meta.tooltip}</title>
-              <line x1={connEnd - CONNECTOR_LEN} y1={y} x2={connEnd} y2={y} stroke={LEADER} strokeWidth="1.2" />
+              <line x1={connStart} y1={y} x2={x - NODE_R - 4} y2={y} stroke={LEADER} strokeWidth="1.2" />
               <text
-                x={connEnd - CONNECTOR_LEN - 8}
+                x={labelRight}
                 y={y + 4.7}
                 textAnchor="end"
                 fill={meta.isCurrent ? CURRENT : MUTED}

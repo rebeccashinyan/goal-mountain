@@ -28,52 +28,28 @@ const CURRENT = "#1E3A2A";
 const VIEW_W = 980;
 const VIEW_H = 620;
 
-// The route is the hand-tuned trail traced from the reference art: a long
-// gentle approach from the compass, wide switchbacks mid-mountain, and a
-// near-vertical final climb. It never rescales with the milestone count.
-const TRAIL: [number, number][] = [
-  [318, 500], [470, 455], [602, 424], [555, 376], [665, 340],
-  [590, 296], [686, 260], [632, 228], [654, 170],
-];
+// The route's x-positions come from the hand-tuned trail traced from the
+// reference art: a gentle approach from the compass, wide switchbacks
+// mid-mountain, a near-vertical final climb. It never rescales with the
+// milestone count.
+const BASE_CAMP: [number, number] = [318, 500]; // compass start — fixed
 const PEAK: [number, number] = [680, 125]; // summit node — always exactly here
-const FULL: [number, number][] = [...TRAIL, PEAK];
-
-const SEG_LENS = FULL.slice(0, -1).map((p, s) =>
-  Math.hypot(FULL[s + 1][0] - p[0], FULL[s + 1][1] - p[1])
-);
-const CUM: number[] = SEG_LENS.reduce<number[]>((acc, len) => {
-  acc.push(acc[acc.length - 1] + len);
-  return acc;
-}, [0]);
-const TRAIL_LEN = CUM[TRAIL.length - 1]; // up to the last bend below the peak
-const TOTAL_LEN = CUM[CUM.length - 1]; // including the final climb to the peak
+const BEND_X = [470, 602, 555, 665, 590, 686, 632, 654]; // the trail's 8 bends
+const Y_FIRST = 455; // first milestone row; rows are evenly spaced up to the peak
 
 const NODE_R = 7.5;
 const CONNECTOR_LEN = 86; // short leader, stops just before the node
 const MAX_LABEL_CHARS = 34;
 
-// Point at arc distance d along the full route
-function trailPoint(d: number): [number, number] {
-  let s = 0;
-  while (s < SEG_LENS.length - 1 && d > CUM[s + 1]) s++;
-  const f = Math.min(Math.max((d - CUM[s]) / SEG_LENS[s], 0), 1);
-  return [
-    FULL[s][0] + (FULL[s + 1][0] - FULL[s][0]) * f,
-    FULL[s][1] + (FULL[s + 1][1] - FULL[s][1]) * f,
-  ];
-}
-
-// Path from the route start up to arc distance d (for the traveled overlay)
-function trailPathTo(dist: number): string {
-  let d = `M ${FULL[0][0]} ${FULL[0][1]}`;
-  for (let s = 0; s < SEG_LENS.length; s++) {
-    if (dist <= CUM[s + 1]) {
-      const [cx, cy] = trailPoint(dist);
-      return d + ` L ${cx} ${cy}`;
-    }
-    d += ` L ${FULL[s + 1][0]} ${FULL[s + 1][1]}`;
-  }
-  return d;
+// x for milestone i of n, following the bend pattern: with ≤8 milestones
+// each snaps to a real bend (evenly spread); with more, x is interpolated
+// along the bend sequence.
+function bendXFor(i: number, n: number): number {
+  if (n <= 8) return BEND_X[Math.round(((i + 1) * 8) / n) - 1];
+  const pos = Math.min(Math.max(((i + 1) * 8) / n - 1, 0), BEND_X.length - 1);
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return BEND_X[lo] + (BEND_X[hi] - BEND_X[lo]) * (pos - lo);
 }
 
 function truncate(text: string): string {
@@ -97,25 +73,27 @@ export default function MountainViz({ milestones, summit, currentMilestoneIndex 
   const completedIdx = Math.max(0, Math.min(currentMilestoneIndex, n - 1));
   const allDone = n > 0 && milestones.every((m) => m.completed);
 
-  // Milestone nodes live on the fixed trail. With up to 8 milestones each
-  // node snaps to one of the trail's real bends (evenly spread); with more,
-  // nodes are spaced along the trail by arc length. The summit is appended
-  // as the final node, always exactly on the peak.
-  const mNodes: { p: [number, number]; d: number }[] =
-    n <= 8
-      ? milestones.map((_, i) => {
-          const idx = Math.round(((i + 1) * 8) / n);
-          return { p: TRAIL[idx], d: CUM[idx] };
-        })
-      : milestones.map((_, i) => {
-          const d = (TRAIL_LEN * (i + 1.5)) / (n + 0.5);
-          return { p: trailPoint(d), d };
-        });
-  const nodes = [...mNodes, { p: PEAK, d: TOTAL_LEN }];
+  // Every node is a bend of the route. Vertical gaps between consecutive
+  // milestones are all equal (evenly spaced from the first row to the
+  // peak); x follows the trail's bend pattern, so the segment lengths
+  // vary like the reference. The summit node sits exactly on the peak.
+  const total = n + 1; // milestones + the summit node
+  const nodes: [number, number][] = Array.from({ length: total }, (_, i) => {
+    if (i === total - 1) return PEAK;
+    const y = Y_FIRST - ((Y_FIRST - PEAK[1]) * i) / (total - 1);
+    return [bendXFor(i, n), y];
+  });
 
-  const routeD = FULL.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
-  const traveledEnd = allDone ? nodes.length - 1 : completedIdx;
-  const traveledD = n > 0 ? trailPathTo(nodes[traveledEnd].d) : "";
+  const routeD = [BASE_CAMP, ...nodes]
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`)
+    .join(" ");
+  const traveledEnd = allDone ? total - 1 : completedIdx;
+  const traveledD =
+    n > 0
+      ? [BASE_CAMP, ...nodes.slice(0, traveledEnd + 1)]
+          .map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`)
+          .join(" ")
+      : "";
 
   const metas = [
     ...milestones.map((m, i) => ({
@@ -191,7 +169,7 @@ export default function MountainViz({ milestones, summit, currentMilestoneIndex 
 
         {/* Label overlay — one label + short connector per node, anchored to
             the node's exact position; never moves the route or mountain */}
-        {nodes.map(({ p: [x, y] }, i) => {
+        {nodes.map(([x, y], i) => {
           const meta = metas[i];
           const connEnd = x - NODE_R - 4;
           return (
@@ -223,7 +201,7 @@ export default function MountainViz({ milestones, summit, currentMilestoneIndex 
         })}
 
         {/* Compass — base camp start */}
-        <g transform={`translate(${TRAIL[0][0]}, ${TRAIL[0][1]})`}>
+        <g transform={`translate(${BASE_CAMP[0]}, ${BASE_CAMP[1]})`}>
           <circle r="22" fill="#FFFFFF" stroke={PATH_DONE} strokeWidth="3" />
           <path d="M 0 -12 L 3.2 -3.2 L 12 0 L 3.2 3.2 L 0 12 L -3.2 3.2 L -12 0 L -3.2 -3.2 Z" fill={PATH_DONE} />
           <circle r="2.4" fill="#FFFFFF" />

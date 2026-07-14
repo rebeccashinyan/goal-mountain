@@ -214,13 +214,13 @@ export default function MiniGuideChat({
 
   return (
     <div
-      className="fixed bottom-5 right-5 z-50 flex h-[480px] w-[360px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-[#E7E0D7] bg-white"
+      className="fixed bottom-5 right-5 z-50 flex h-[480px] w-[360px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-[#ECECEC] bg-white"
       style={{ boxShadow: "0 24px 60px rgba(43, 58, 42, 0.18), 0 4px 12px rgba(43, 58, 42, 0.08)" }}
       role="dialog"
       aria-label="Guide chat"
     >
       {/* Header */}
-      <div className="flex items-center gap-2.5 border-b border-[#E7E0D7] bg-[#FBF8F1] px-4 py-3">
+      <div className="flex items-center gap-2.5 border-b border-[#ECECEC] bg-[#F6F6F6] px-4 py-3">
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-forest-700 text-white">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
             <path d="M7 1.5L8.5 5.5L12.5 7L8.5 8.5L7 12.5L5.5 8.5L1.5 7L5.5 5.5L7 1.5Z" fill="currentColor" />
@@ -305,7 +305,7 @@ export default function MiniGuideChat({
 
       {/* Input */}
       <form
-        className="flex items-center gap-2 border-t border-[#E7E0D7] px-3 py-2.5"
+        className="flex items-center gap-2 border-t border-[#ECECEC] px-3 py-2.5"
         onSubmit={(e) => {
           e.preventDefault();
           send();
@@ -317,7 +317,7 @@ export default function MiniGuideChat({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Reply to your guide..."
-          className="min-w-0 flex-1 rounded-xl border border-[#E7E0D7] bg-white px-3 py-2 text-[13px] text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200"
+          className="min-w-0 flex-1 rounded-xl border border-[#ECECEC] bg-white px-3 py-2 text-[13px] text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200"
         />
         {sending ? (
           <button

@@ -2,7 +2,7 @@ import ContextNav from "@/components/ContextNav";
 
 export default function MountainDetailLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#FAFAF8]">
+    <div className="min-h-screen bg-[#F6F6F6]">
       <header className="flex items-center justify-between px-6 pt-5 pb-3">
         <ContextNav />
         <h1 className="text-xl font-bold tracking-tight text-forest-900">Goal Mountain</h1>

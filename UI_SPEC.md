@@ -32,9 +32,10 @@ Defined in `app/globals.css` as Tailwind CSS custom properties via `@theme inlin
 | `summit-light` | `#F0ACA4` | Light danger tint |
 
 **Neutral (stone-based):**
-- Background base: `#FAFAF8` (mountain + guide layouts); dashboard layout uses `#F6F6F6`
-- Card base: `#FBF8F1` (mountain pages); dashboard mountain cards are pure white `#FFFFFF`, borderless
-- Card border: `#E7E0D7`
+- Background base: `#F6F6F6` (all layouts)
+- Card base: pure white `#FFFFFF`, borderless, soft shadow
+- Muted inner panels / tints: `#F6F6F6` on white cards
+- Hairline borders (controls, dropdown menus, internal dividers): `#ECECEC` / `stone-100`
 - Body text: `#1c1917` (stone-900)
 - Secondary text: stone-500 (`#78716c`)
 - Placeholder: stone-400
@@ -64,13 +65,7 @@ text-[10px] font-semibold uppercase tracking-[0.18em] text-forest-600
 
 ### Background
 
-Layered radial gradients applied to `body`:
-```css
-background:
-  radial-gradient(circle at 18% 16%, rgba(208, 236, 221, 0.38), transparent 28rem),
-  radial-gradient(circle at 86% 8%, rgba(240, 172, 164, 0.16), transparent 24rem),
-  #FAFAF8;
-```
+All three layouts wrap the page in a flat `#F6F6F6` background (`min-h-screen bg-[#F6F6F6]`). (The legacy radial-gradient body background in globals.css is fully covered by the layout wrappers.)
 
 ### Shadows
 
@@ -235,7 +230,7 @@ All three layouts render the same `ContextNav` header: a 3-tab icon nav + a cont
 
 **Sections:**
 
-1. **Header card** — book icon, "Memory Profile" eyebrow, title, description + mountain selector dropdown (if multiple mountains)
+1. **Header (plain text, no card)** — h2 "Memory Profile" + "What the AI knows about you" subtitle + description, with the mountain selector dropdown at right (if multiple mountains)
 
 2. **Mountain context bar** — goal name + progress bar for selected mountain
 
@@ -259,16 +254,13 @@ All three layouts render the same `ContextNav` header: a 3-tab icon nav + a cont
 
 **Purpose:** Context-aware conversational AI coach with persistent chat history.
 
-**Layout:** Stacked — header card on top, two-column sidebar+chat below. Total height: `calc(100vh - 80px)`.
+**Layout:** Stacked — plain-text header on top, two-column sidebar+chat below (white rounded-3xl container, borderless, soft shadow). Total height: `calc(100vh - 80px)`.
 
-**Header card** (matches other page header cards: `rounded-3xl bg-[#FBF8F1] px-6 py-5`):
-- Compass icon (SVG, h-12 w-12, `bg-white rounded-2xl border border-[#D0ECDD]`)
-- "AI COMPASS GUIDE" eyebrow (`text-xs font-semibold uppercase tracking-[0.18em] text-forest-600`)
-- "Ask for your next best move" heading (`text-3xl font-bold text-forest-950`)
-- Subtitle: `text-sm text-stone-500`
-- Context selector dropdown (right, `text-xs uppercase` "CONTEXT" label): "All Mountains" or specific mountain goal — controls which mountain new chats are scoped to
+**Header (plain text, no card):**
+- h2 "AI Guide" (`text-3xl font-bold text-forest-950`) + "Ask for your next best move" subtitle (`text-base font-semibold text-stone-800`)
+- Context selector dropdown (right, "MOUNTAIN" label): "All Mountains" or specific mountain goal — controls which mountain new chats are scoped to
 
-**Sidebar (240px, bg-[#FAFAF8], border-r):**
+**Sidebar (240px, bg-[#F6F6F6], border-r border-stone-100):**
 - "New Chat" button (+ icon, creates a `user_initiated` chat in Supabase)
 - Search input (filters both sections by title)
 - **"Messages from AI" section** — always visible; shows `ai_proactive` chats with orange unread dot (`#E07A6E`) and last_message preview, collapsed to the 4 most recent with a "Show N more" / "Show less" toggle (search always covers all). If empty: "No messages yet — the AI will reach out if it detects you're off track."
@@ -280,7 +272,7 @@ All three layouts render the same `ContextNav` header: a 3-tab icon nav + a cont
 
 **Chat panel (flex-1, bg-white):**
 - **Chat header** (border-b): selected chat title + small mountain name pill (forest-50 bg)
-- **Messages area** (bg-[#FAFAF8]):
+- **Messages area** (bg-[#F6F6F6]):
   - Empty state: 3 starter question chips
   - User bubbles: right-aligned, forest-700 bg, white text
   - AI bubbles: left-aligned, white bg, stone-800 text
@@ -355,7 +347,7 @@ Docked chat panel on the Mountain Overview page — the guide "comes to the user
 - `plan_talk` — opened by the "Discuss plan with AI" button; guide receives a summary of the current week, asks what to change, and its `propose_plan` action regenerates the plan **inline** (POST `/api/plan` from the panel), fires `onPlanUpdated` so the schedule refreshes behind the chat, and shows a "✓ plan updated" note bubble. `advance_milestone` still defers to the full AI Guide via the proposal button.
 
 - Fixed bottom-right, 360×480, rounded-2xl, deep layered shadow, z-50
-- Header (cream `#FBF8F1`): forest circle guide icon + "Your guide" + "Daily check-in — {day}" subtitle + **expand icon** (top-right, arrows-out → navigates to `/guide?mountain_id=…&chat_id=…`, which auto-opens the same conversation) + close (×)
+- Header (muted `#F6F6F6`): forest circle guide icon + "Your guide" + "Daily check-in — {day}" subtitle + **expand icon** (top-right, arrows-out → navigates to `/guide?mountain_id=…&chat_id=…`, which auto-opens the same conversation) + close (×)
 - On open: creates a real `guide_chats` row ("Daily check-in — {day}") and sends the day summary with `initial_context`, so the AI speaks first; the full history is visible later in the AI Guide
 - Messages: user bubbles forest-700/white right-aligned, AI bubbles `#F4F1EA` left-aligned; typing indicator (3 bouncing dots); up to 3 suggested-reply chips
 - `propose_plan` / `advance_milestone` actions render as a "Your guide has a proposal — review it in the AI Guide →" button (complex action cards live only in the full guide)
@@ -388,19 +380,19 @@ Two-view modal:
 
 ## Patterns
 
-### Header Cards
+### Page Headers (plain text — header cards are retired)
 
-Used at the top of every main page and section. Consistent structure:
+Every main page opens with the same plain-text header on the page background (no card, no icon tile, no eyebrow):
 
 ```
-rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5
-box-shadow: elevated card shadow
-  └── Left: icon (h-14 w-14, rounded-2xl, white bg, forest-100 ring)
-           + eyebrow label (10px, uppercase, tracking, forest-600)
-           + h2 (bold, forest-950)
-           + description (sm, stone-500)
+flex px-1 md:flex-row md:items-center md:justify-between
+  └── Left: h2 page title (text-3xl font-bold text-forest-950)
+           + subtitle (text-base font-semibold text-stone-800)
+           + optional description (sm, stone-500)
   └── Right: CTA button or dropdown selector
 ```
+
+Current titles: "My Mountains", "Mountain Overview", "Insights", "Memory Profile", "AI Guide", "Settings". The page title is always larger than the goal/subtitle.
 
 ### Eyebrow Labels
 

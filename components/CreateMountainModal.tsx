@@ -225,14 +225,14 @@ export default function CreateMountainModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
         <div
-          className="relative bg-white rounded-3xl w-full max-w-2xl mx-4 flex flex-col overflow-hidden border border-[#E7E0D7]"
+          className="relative bg-white rounded-3xl w-full max-w-2xl mx-4 flex flex-col overflow-hidden border border-[#ECECEC]"
           style={{
             maxHeight: "88vh",
             boxShadow: "0 8px 40px rgba(20,60,35,0.14), 0 2px 8px rgba(20,60,35,0.06)",
           }}
         >
           {/* Header */}
-          <div className="bg-[#FBF8F1] px-6 pt-6 pb-5 border-b border-[#E7E0D7] shrink-0">
+          <div className="bg-[#F6F6F6] px-6 pt-6 pb-5 border-b border-[#ECECEC] shrink-0">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-forest-600 mb-1">
@@ -266,7 +266,7 @@ export default function CreateMountainModal({
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {stages.length > 0 && (
-                    <div className="rounded-2xl border border-[#E7E0D7] bg-[#FAFAF8] px-4 py-3">
+                    <div className="rounded-2xl border border-[#ECECEC] bg-[#F6F6F6] px-4 py-3">
                       <p className="text-xs font-semibold text-stone-500 mb-2">Proven Stages</p>
                       <div className="space-y-1.5">
                         {stages.map((s, i) => (
@@ -288,7 +288,7 @@ export default function CreateMountainModal({
 
                   <div className="space-y-3">
                     {skills.length > 0 && (
-                      <div className="rounded-2xl border border-[#E7E0D7] bg-[#FAFAF8] px-4 py-3">
+                      <div className="rounded-2xl border border-[#ECECEC] bg-[#F6F6F6] px-4 py-3">
                         <p className="text-xs font-semibold text-stone-500 mb-2">Skills You&rsquo;ll Build</p>
                         <div className="flex flex-wrap gap-1.5">
                           {skills.map((s, i) => (
@@ -300,7 +300,7 @@ export default function CreateMountainModal({
                       </div>
                     )}
                     {pitfalls.length > 0 && (
-                      <div className="rounded-2xl border border-[#E7E0D7] bg-[#FAFAF8] px-4 py-3">
+                      <div className="rounded-2xl border border-[#ECECEC] bg-[#F6F6F6] px-4 py-3">
                         <p className="text-xs font-semibold text-stone-500 mb-2">Watch Out For</p>
                         <div className="space-y-1">
                           {pitfalls.map((p, i) => (
@@ -348,7 +348,7 @@ export default function CreateMountainModal({
                 ))}
 
                 {/* Summit */}
-                <div className="flex items-start gap-3 rounded-xl px-3 py-2.5 bg-[#FBF8F1] border border-[#E7E0D7] mt-1">
+                <div className="flex items-start gap-3 rounded-xl px-3 py-2.5 bg-[#F6F6F6] border border-[#ECECEC] mt-1">
                   <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center mt-0.5 bg-[#E7B85B]">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                       <path d="M5 1L6.2 4L9 5L6.2 6L5 9L3.8 6L1 5L3.8 4L5 1Z" fill="white" />
@@ -368,7 +368,7 @@ export default function CreateMountainModal({
           </div>
 
           {/* Footer CTA */}
-          <div className="px-6 py-4 border-t border-[#E7E0D7] bg-white shrink-0 flex items-center gap-3">
+          <div className="px-6 py-4 border-t border-[#ECECEC] bg-white shrink-0 flex items-center gap-3">
             <button
               onClick={startClimbing}
               className="flex-1 text-sm py-3 rounded-xl bg-forest-700 text-white font-semibold hover:bg-forest-600 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
@@ -399,14 +399,14 @@ export default function CreateMountainModal({
       />
 
       <div
-        className="relative bg-white rounded-3xl w-full max-w-lg mx-4 flex flex-col overflow-hidden border border-[#E7E0D7]"
+        className="relative bg-white rounded-3xl w-full max-w-lg mx-4 flex flex-col overflow-hidden border border-[#ECECEC]"
         style={{
           height: "min(580px, 85vh)",
           boxShadow: "0 8px 40px rgba(20,60,35,0.12), 0 2px 8px rgba(20,60,35,0.06)",
         }}
       >
         {/* Header */}
-        <div className="bg-[#FBF8F1] px-6 pt-6 pb-4 border-b border-[#E7E0D7]">
+        <div className="bg-[#F6F6F6] px-6 pt-6 pb-4 border-b border-[#ECECEC]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">

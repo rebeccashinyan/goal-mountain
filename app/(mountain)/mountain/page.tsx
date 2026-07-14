@@ -97,7 +97,7 @@ function MountainContent() {
         </Link>
       </div>
 
-      <div className="rounded-3xl border border-[#E7E0D7] bg-white p-3 md:p-5" style={{ boxShadow: "0 10px 28px rgba(43, 58, 42, 0.07)" }}>
+      <div className="rounded-3xl bg-white p-3 md:p-5" style={{ boxShadow: "0 6px 20px rgba(43, 58, 42, 0.06), 0 1px 2px rgba(43, 58, 42, 0.05)" }}>
         <MountainViz
           milestones={mountain.milestones}
           summit={mountain.summit}

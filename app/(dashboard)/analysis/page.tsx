@@ -24,7 +24,7 @@ interface MountainSummary {
   progress: number;
 }
 
-const cardShadow = "0 10px 28px rgba(43, 58, 42, 0.07), 0 1px 2px rgba(43, 58, 42, 0.05)";
+const cardShadow = "0 6px 20px rgba(43, 58, 42, 0.06), 0 1px 2px rgba(43, 58, 42, 0.05)";
 
 const categoryStyle: Record<
   string,
@@ -157,26 +157,15 @@ export default function AnalysisPage() {
   return (
     <div className="max-w-[1180px] mx-auto mt-8 space-y-8 pb-10">
       {/* Header */}
-      <div className="flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: cardShadow }}>
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
-            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
-              <path d="M8 24V8.5C8 6.6 9.6 5 11.5 5H22V21H11.5C9.6 21 8 22.3 8 24Z" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.6" strokeLinejoin="round" />
-              <path d="M12 10H18M12 14H19" stroke="#1E5235" strokeWidth="1.5" strokeLinecap="round" />
-              <path d="M20 4.5L21 7L23.5 8L21 9L20 11.5L19 9L16.5 8L19 7L20 4.5Z" fill="#E7B85B" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
-              Memory Profile
-            </p>
-            <h2 className="mt-1 text-3xl font-bold text-forest-950">
-              What the AI knows about you
-            </h2>
-            <p className="mt-1 max-w-2xl text-sm text-stone-500">
-              This is the long-term context Goal Mountain uses to personalize guidance, plans, and reflections.
-            </p>
-          </div>
+      <div className="flex flex-col gap-4 px-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-forest-950">Memory Profile</h2>
+          <p className="mt-1.5 text-base font-semibold text-stone-800">
+            What the AI knows about you
+          </p>
+          <p className="mt-1 max-w-2xl text-sm text-stone-500">
+            This is the long-term context Goal Mountain uses to personalize guidance, plans, and reflections.
+          </p>
         </div>
 
         {mountains.length > 1 && (
@@ -197,7 +186,7 @@ export default function AnalysisPage() {
       {/* Mountain context */}
       {currentMountain && (
         <div
-          className="rounded-3xl border border-[#E7E0D7] bg-white p-5"
+          className="rounded-3xl bg-white p-5"
           style={{ boxShadow: cardShadow }}
         >
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -253,7 +242,7 @@ export default function AnalysisPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Training History */}
             <div
-              className="rounded-2xl border border-[#E7E0D7] bg-white p-5 lg:col-span-2"
+              className="rounded-2xl bg-white p-5 lg:col-span-2"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-semibold text-forest-600 uppercase tracking-[0.14em] mb-2">
@@ -266,7 +255,7 @@ export default function AnalysisPage() {
 
             {/* Behavior Patterns */}
             <div
-              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
+              className="rounded-2xl bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-semibold text-forest-600 uppercase tracking-[0.14em] mb-3">
@@ -293,7 +282,7 @@ export default function AnalysisPage() {
 
             {/* Motivation Profile */}
             <div
-              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
+              className="rounded-2xl bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-semibold text-forest-600 uppercase tracking-[0.14em] mb-3">
@@ -342,7 +331,7 @@ export default function AnalysisPage() {
           </div>
         ) : (
           <div
-            className="rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] p-8 text-center"
+            className="rounded-3xl bg-white p-8 text-center"
             style={{ boxShadow: cardShadow }}
           >
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
@@ -413,7 +402,7 @@ export default function AnalysisPage() {
               return (
                 <div
                   key={mem.id}
-                  className="flex items-start gap-3 rounded-2xl border border-[#E7E0D7] bg-white px-4 py-3 group"
+                  className="flex items-start gap-3 rounded-2xl bg-white px-4 py-3 group"
                   style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.04)" }}
                 >
                   <span
@@ -446,7 +435,7 @@ export default function AnalysisPage() {
           </div>
         ) : (
           <div
-            className="rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] p-8 text-center"
+            className="rounded-3xl bg-white p-8 text-center"
             style={{ boxShadow: cardShadow }}
           >
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">

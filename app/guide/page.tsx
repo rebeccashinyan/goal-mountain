@@ -297,24 +297,11 @@ function GuideContent() {
   return (
     <div className="max-w-[1180px] mx-auto flex flex-col gap-3 mt-4" style={{ height: "calc(100vh - 80px)" }}>
 
-      {/* ── Header card ── */}
-      <div className="flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 shrink-0 md:flex-row md:items-center md:justify-between"
-        style={{ boxShadow: "0 10px 28px rgba(43,58,42,0.08), 0 1px 2px rgba(43,58,42,0.06)" }}>
-        <div className="flex items-center gap-4">
-          {/* Compass icon */}
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white border border-[#D0ECDD]"
-            style={{ boxShadow: "0 1px 4px rgba(43,58,42,0.06)" }}>
-            <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
-              <circle cx="13" cy="13" r="10" stroke="#1E5235" strokeWidth="1.4" />
-              <path d="M13 3v2M13 21v2M3 13h2M21 13h2" stroke="#1E5235" strokeWidth="1.2" strokeLinecap="round" />
-              <path d="M13 8.5l2 4L19 13l-4 2L13 19l-2-4L7 13l4-2L13 8.5Z" fill="#E7B85B" stroke="#1E5235" strokeWidth="0.8" />
-            </svg>
-          </div>
-          {/* Text */}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">AI Compass Guide</p>
-            <h2 className="mt-1 text-3xl font-bold text-forest-950">Ask for your next best move</h2>
-          </div>
+      {/* ── Header — plain text, no card ── */}
+      <div className="flex flex-col gap-4 px-1 shrink-0 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-forest-950">AI Guide</h2>
+          <p className="mt-1.5 text-base font-semibold text-stone-800">Ask for your next best move</p>
         </div>
         {/* Context selector */}
         <div className="flex items-center gap-3 shrink-0">
@@ -346,11 +333,11 @@ function GuideContent() {
         </div>
       </div>
 
-    <div className="flex flex-1 gap-0 overflow-hidden rounded-3xl border border-[#E7E0D7]"
-      style={{ boxShadow: "0 10px 28px rgba(43,58,42,0.08), 0 1px 2px rgba(43,58,42,0.05)" }}>
+    <div className="flex flex-1 gap-0 overflow-hidden rounded-3xl bg-white"
+      style={{ boxShadow: "0 6px 20px rgba(43,58,42,0.06), 0 1px 2px rgba(43,58,42,0.05)" }}>
 
       {/* ── Sidebar ── */}
-      <div className="w-[240px] shrink-0 flex flex-col border-r border-[#E7E0D7] bg-[#FAFAF8]">
+      <div className="w-[240px] shrink-0 flex flex-col border-r border-stone-100 bg-[#F6F6F6]">
         {/* Top actions */}
         <div className="px-3 pt-4 pb-3 space-y-1.5">
           <button
@@ -473,7 +460,7 @@ function GuideContent() {
       <div className="flex-1 flex flex-col bg-white overflow-hidden">
         {!selectedChatId ? (
           /* Empty state */
-          <div className="flex-1 flex flex-col items-center justify-center bg-[#FAFAF8] px-8">
+          <div className="flex-1 flex flex-col items-center justify-center bg-[#F6F6F6] px-8">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100 mb-5"
               style={{ boxShadow: "0 8px 18px rgba(30,82,53,0.08)" }}>
               <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true">
@@ -497,7 +484,7 @@ function GuideContent() {
         ) : (
           <>
             {/* Chat header */}
-            <div className="px-5 py-3.5 border-b border-[#E7E0D7] bg-white flex items-center justify-between shrink-0">
+            <div className="px-5 py-3.5 border-b border-stone-100 bg-white flex items-center justify-between shrink-0">
               <div>
                 <p className="text-sm font-bold text-forest-950">{selectedChat?.title}</p>
                 {selectedMountainLabel && (
@@ -510,7 +497,7 @@ function GuideContent() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto bg-[#FAFAF8] px-6 py-5 space-y-4">
+            <div className="flex-1 overflow-y-auto bg-[#F6F6F6] px-6 py-5 space-y-4">
               {messagesLoading ? (
                 <div className="flex justify-center pt-10">
                   <div className="w-6 h-6 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
@@ -566,7 +553,7 @@ function GuideContent() {
                             Plan applied — your Overview has been updated.
                           </div>
                         ) : (
-                          <div className="rounded-2xl border border-[#E7E0D7] bg-white overflow-hidden" style={{ boxShadow: "0 4px 14px rgba(20,60,35,0.07)" }}>
+                          <div className="rounded-2xl border border-stone-100 bg-white overflow-hidden" style={{ boxShadow: "0 4px 14px rgba(20,60,35,0.07)" }}>
                             <div className="px-4 pt-4 pb-3 border-b border-[#F0ECE6]">
                               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-forest-600 mb-0.5">New Plan</p>
                               <p className="text-sm font-semibold text-stone-800">{planProposals[msg.id].plan?.focus_area || planProposals[msg.id].priority_recommendation}</p>
@@ -640,7 +627,7 @@ function GuideContent() {
             </div>
 
             {/* Input */}
-            <div className="border-t border-[#E7E0D7] bg-white p-4 shrink-0">
+            <div className="border-t border-stone-100 bg-white p-4 shrink-0">
               <div className="relative">
                 <input
                   ref={inputRef}

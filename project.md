@@ -645,3 +645,15 @@ Matching the new overview prototype, the cream header cards were removed:
 
 - **Page header** — no card; "Mountain Overview" is now the large h2 with the goal as a smaller subtitle beneath it (hierarchy flipped — the page title is bigger than the goal). "Discuss With AI" button unchanged at right.
 - **Weekly Plan header** — card and icon tile removed; plain "Weekly Plan" heading + "Week of …" subtitle with the plan button at right.
+
+---
+
+### Global UI Alignment: One Visual Language (2026-07-14)
+
+All remaining pages were brought onto the design language established by the All Mountains and Mountain Overview redesigns:
+
+- **Background** — every layout (dashboard, mountain, guide) now uses flat `#F6F6F6`
+- **Cards** — white `#FFFFFF`, borderless, soft shadow everywhere; warm-beige tones retired (`#FBF8F1` → `#F6F6F6` muted panels, `#E7E0D7` → `#ECECEC`/stone-100 hairlines)
+- **Headers** — cream header cards removed on Insights, Memory Profile (Analysis), AI Guide, and Settings; each page now opens with a plain-text header (big title + smaller subtitle + right-side action), matching Mountain Overview
+- **Overview viz card** — border dropped, soft shadow
+- Shared components (`PlanView`, `MiniGuideChat`, `CreateMountainModal`) swapped to the same neutral palette

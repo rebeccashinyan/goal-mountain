@@ -62,8 +62,8 @@ interface StrategicIntelligence {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-const cardShadow = "0 10px 28px rgba(43, 58, 42, 0.07), 0 1px 2px rgba(43, 58, 42, 0.05)";
-const raisedShadow = "0 1px 3px rgba(20,60,35,0.06)";
+const cardShadow = "0 6px 20px rgba(43, 58, 42, 0.06), 0 1px 2px rgba(43, 58, 42, 0.05)";
+const raisedShadow = "0 4px 14px rgba(43, 58, 42, 0.05), 0 1px 2px rgba(43, 58, 42, 0.04)";
 
 function computeConsistency(logs: ProgressLog[]): number {
   if (!logs.length) return 0;
@@ -226,27 +226,13 @@ function InsightsContent() {
   return (
     <div className="max-w-[1180px] mx-auto mt-8 space-y-8 pb-10">
 
-      {/* ── Header card ──────────────────────────────────────────────────── */}
-      <div
-        className="flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between"
-        style={{ boxShadow: cardShadow }}
-      >
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
-            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
-              <rect x="6" y="7" width="18" height="16" rx="4" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.6" />
-              <path d="M11 18V14M15 18V11M19 18V13" stroke="#1E5235" strokeWidth="2" strokeLinecap="round" />
-              <path d="M22 4.5L23 7L25.5 8L23 9L22 11.5L21 9L18.5 8L21 7L22 4.5Z" fill="#E7B85B" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
-              Research Agent
-            </p>
-            <h2 className="mt-1 text-3xl font-bold text-forest-950">
-              Insights for {mountain.goal}
-            </h2>
-          </div>
+      {/* ── Header — plain text, no card ─────────────────────────────────── */}
+      <div className="flex flex-col gap-4 px-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-forest-950">Insights</h2>
+          <p className="mt-1.5 text-base font-semibold text-stone-800">
+            {mountain.goal}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -265,7 +251,7 @@ function InsightsContent() {
           Journey Health
         </p>
         <div
-          className="grid grid-cols-2 divide-x divide-[#E7E0D7] lg:grid-cols-4 rounded-2xl border border-[#E7E0D7] bg-white overflow-hidden"
+          className="grid grid-cols-2 divide-x divide-stone-100 lg:grid-cols-4 rounded-2xl bg-white overflow-hidden"
           style={{ boxShadow: raisedShadow }}
         >
           {[
@@ -298,7 +284,7 @@ function InsightsContent() {
             Patterns &amp; Learnings
           </p>
           <div
-            className="rounded-2xl border border-[#E7E0D7] bg-white px-5 py-4 space-y-2.5 min-h-[120px]"
+            className="rounded-2xl bg-white px-5 py-4 space-y-2.5 min-h-[120px]"
             style={{ boxShadow: raisedShadow }}
           >
             {patterns.length > 0 ? (
@@ -325,7 +311,7 @@ function InsightsContent() {
               {obstacles.map((obs, i) => (
                 <div
                   key={i}
-                  className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4"
+                  className="rounded-2xl bg-white px-4 py-4"
                   style={{ boxShadow: raisedShadow }}
                 >
                   <p className="text-xs text-stone-400 mb-1">Risk #{i + 1}</p>
@@ -345,7 +331,7 @@ function InsightsContent() {
             </div>
           ) : (
             <div
-              className="rounded-2xl border border-[#E7E0D7] bg-white px-5 py-4 min-h-[120px] flex items-center"
+              className="rounded-2xl bg-white px-5 py-4 min-h-[120px] flex items-center"
               style={{ boxShadow: raisedShadow }}
             >
               <p className="text-sm text-stone-400">
@@ -394,7 +380,7 @@ function InsightsContent() {
         {intelligence ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {/* 4.1 Recommended Strategy */}
-            <div className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
+            <div className="rounded-2xl bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
               <p className="text-[10px] font-semibold text-stone-400 mb-2">4.1 Recommended Strategy</p>
               <p className="text-xs text-stone-400 mb-0.5">Current Focus</p>
               <p className="text-sm font-semibold text-stone-800 mb-2">{intelligence.recommended_strategy.focus}</p>
@@ -403,7 +389,7 @@ function InsightsContent() {
             </div>
 
             {/* 4.2 Skill Gap Analysis */}
-            <div className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
+            <div className="rounded-2xl bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
               <p className="text-[10px] font-semibold text-stone-400 mb-2">4.2 Skill Gap Analysis</p>
               <p className="text-xs text-stone-400 mb-0.5">Goal</p>
               <p className="text-xs font-semibold text-stone-800 mb-2">{intelligence.skill_gap_analysis.goal}</p>
@@ -422,7 +408,7 @@ function InsightsContent() {
             </div>
 
             {/* 4.3 Highest Leverage Actions */}
-            <div className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
+            <div className="rounded-2xl bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
               <p className="text-[10px] font-semibold text-stone-400 mb-2">4.3 Highest Leverage Actions</p>
               <p className="text-xs text-stone-400 mb-0.5">Highest Leverage Action</p>
               <p className="text-xs font-semibold text-stone-800 mb-2">{intelligence.highest_leverage.action}</p>
@@ -433,7 +419,7 @@ function InsightsContent() {
             </div>
 
             {/* 4.4 Bottleneck Analysis */}
-            <div className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
+            <div className="rounded-2xl bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
               <p className="text-[10px] font-semibold text-stone-400 mb-2">4.4 Bottleneck Analysis</p>
               <p className="text-xs text-stone-400 mb-1">Current Bottleneck</p>
               <div className="space-y-0.5 mb-2">
@@ -446,7 +432,7 @@ function InsightsContent() {
             </div>
 
             {/* 4.5 Opportunity Analysis */}
-            <div className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
+            <div className="rounded-2xl bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
               <p className="text-[10px] font-semibold text-stone-400 mb-2">4.5 Opportunity Analysis</p>
               <p className="text-xs text-stone-400 mb-1">Current Market Trends</p>
               <p className="text-xs text-stone-600 mb-1">Most requested skills:</p>
@@ -458,7 +444,7 @@ function InsightsContent() {
             </div>
 
             {/* 4.6 Trade-Off Analysis */}
-            <div className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
+            <div className="rounded-2xl bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
               <p className="text-[10px] font-semibold text-stone-400 mb-2">4.6 Trade-Off Analysis</p>
               <p className="text-xs text-stone-600 mb-2">You have {intelligence.trade_off.available_hours} hours this week.</p>
               <p className="text-xs text-stone-400 mb-0.5">Option A</p>
@@ -471,7 +457,7 @@ function InsightsContent() {
             </div>
 
             {/* 4.7 Scenario Planning */}
-            <div className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
+            <div className="rounded-2xl bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
               <p className="text-[10px] font-semibold text-stone-400 mb-2">4.7 Scenario Planning</p>
               <p className="text-xs text-stone-400 mb-0.5">If You Continue Current Pace</p>
               <p className="text-xs text-stone-600 mb-2">{intelligence.scenario.current_pace}</p>
@@ -482,7 +468,7 @@ function InsightsContent() {
             </div>
 
             {/* 4.8 Mentor Insights */}
-            <div className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
+            <div className="rounded-2xl bg-white px-4 py-4" style={{ boxShadow: raisedShadow }}>
               <p className="text-[10px] font-semibold text-stone-400 mb-2">4.8 Mentor Insights</p>
               <p className="text-xs text-stone-400 mb-1">Mentor Insight</p>
               <p className="text-xs text-stone-600 leading-relaxed">{intelligence.mentor_insight}</p>
@@ -490,7 +476,7 @@ function InsightsContent() {
           </div>
         ) : (
           <div
-            className="rounded-2xl border border-[#E7E0D7] bg-white px-6 py-8 text-center"
+            className="rounded-2xl bg-white px-6 py-8 text-center"
             style={{ boxShadow: raisedShadow }}
           >
             <p className="text-sm font-semibold text-stone-700 mb-1">No analysis yet</p>
@@ -509,7 +495,7 @@ function InsightsContent() {
             Progress Timeline
           </p>
           <div
-            className="rounded-2xl border border-[#E7E0D7] bg-white px-5 py-5"
+            className="rounded-2xl bg-white px-5 py-5"
             style={{ boxShadow: raisedShadow }}
           >
             {/* Header row */}
@@ -550,7 +536,7 @@ function InsightsContent() {
             </div>
 
             {/* Stats */}
-            <div className="rounded-xl border border-[#E7E0D7] bg-[#FAFAF8] px-4 py-3 space-y-1.5">
+            <div className="rounded-xl bg-[#F6F6F6] px-4 py-3 space-y-1.5">
               <p className="text-xs text-stone-600">
                 <span className="text-stone-400">Completed Camps: </span>
                 {completedCamps}
@@ -575,14 +561,14 @@ function InsightsContent() {
           {intelligence ? (
             <div className="space-y-3">
               <div
-                className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4"
+                className="rounded-2xl bg-white px-4 py-4"
                 style={{ boxShadow: raisedShadow }}
               >
                 <p className="text-xs text-stone-400 mb-2">If Current Pattern Continues</p>
                 <p className="text-xs text-stone-600 leading-relaxed">{intelligence.scenario.current_pace}</p>
               </div>
               <div
-                className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-4"
+                className="rounded-2xl bg-white px-4 py-4"
                 style={{ boxShadow: raisedShadow }}
               >
                 <p className="text-xs text-stone-400 mb-2">If Consistency Drops 20%</p>
@@ -591,7 +577,7 @@ function InsightsContent() {
             </div>
           ) : (
             <div
-              className="rounded-2xl border border-[#E7E0D7] bg-white px-4 py-6 text-center"
+              className="rounded-2xl bg-white px-4 py-6 text-center"
               style={{ boxShadow: raisedShadow }}
             >
               <p className="text-xs text-stone-400">

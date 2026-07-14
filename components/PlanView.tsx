@@ -226,7 +226,7 @@ export default function PlanView({
   }
 
   const inputClasses =
-    "w-full bg-white rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-[#E7E0D7] focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
+    "w-full bg-white rounded-xl px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 border border-[#ECECEC] focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200";
 
   const reflectionIsFresh =
     reflection &&
@@ -281,7 +281,7 @@ export default function PlanView({
       {/* Form — only for the very first plan; changes go through the guide chat */}
       {!plan && !generating && (
         <div
-          className="rounded-3xl border border-[#E7E0D7] bg-white p-5 space-y-3"
+          className="rounded-3xl border border-[#ECECEC] bg-white p-5 space-y-3"
           style={{ boxShadow: cardShadow }}
         >
           <div>
@@ -326,7 +326,7 @@ export default function PlanView({
           {/* Week in review — written automatically by the Reflection Agent */}
           {reflectionIsFresh && (
             <div
-              className="rounded-2xl border border-[#E7E0D7] bg-[#FBF8F1] p-5"
+              className="rounded-2xl border border-[#ECECEC] bg-[#F6F6F6] p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
@@ -349,7 +349,7 @@ export default function PlanView({
 
           {/* Priority */}
           <div
-            className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
+            className="rounded-2xl border border-[#ECECEC] bg-white p-5"
             style={{ boxShadow: cardShadow }}
           >
             <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
@@ -393,7 +393,7 @@ export default function PlanView({
                       className={`rounded-2xl p-3 border bg-white ${
                         isToday
                           ? "border-forest-300 ring-2 ring-forest-100"
-                          : "border-[#E7E0D7]"
+                          : "border-[#ECECEC]"
                       }`}
                       style={{ boxShadow: isRest ? "none" : cardShadow }}
                     >
@@ -431,14 +431,14 @@ export default function PlanView({
                                 />
                                 <div
                                   role="menu"
-                                  className="absolute left-1/2 top-full z-20 mt-1 w-32 -translate-x-1/2 overflow-hidden rounded-xl border border-[#E7E0D7] bg-white"
+                                  className="absolute left-1/2 top-full z-20 mt-1 w-32 -translate-x-1/2 overflow-hidden rounded-xl border border-[#ECECEC] bg-white"
                                   style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
                                 >
                                   <button
                                     type="button"
                                     role="menuitem"
                                     onClick={() => setOpenDayMenu(null)}
-                                    className="block w-full border-b border-[#E7E0D7] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 bg-forest-50/60 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                    className="block w-full border-b border-[#ECECEC] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 bg-forest-50/60 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
                                   >
                                     ✓ Day complete
                                   </button>
@@ -465,7 +465,7 @@ export default function PlanView({
                           {tasks.map((task, i) => (
                             <div
                               key={i}
-                              className="rounded-xl border border-[#E7E0D7] bg-white p-2.5"
+                              className="rounded-xl border border-[#ECECEC] bg-white p-2.5"
                             >
                               <p className="text-xs font-medium leading-relaxed text-stone-700">
                                 <span
@@ -513,14 +513,14 @@ export default function PlanView({
                                         />
                                         <div
                                           role="menu"
-                                          className="absolute left-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-xl border border-[#E7E0D7] bg-white"
+                                          className="absolute left-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-xl border border-[#ECECEC] bg-white"
                                           style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
                                         >
                                           <button
                                             type="button"
                                             role="menuitem"
                                             onClick={() => setTaskStatus(dayName, i, "done")}
-                                            className="block w-full border-b border-[#E7E0D7] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                            className="block w-full border-b border-[#ECECEC] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
                                           >
                                             ✓ Done
                                           </button>
@@ -537,7 +537,7 @@ export default function PlanView({
                                               type="button"
                                               role="menuitem"
                                               onClick={() => setTaskStatus(dayName, i, undefined)}
-                                              className="block w-full border-t border-[#E7E0D7] px-3 py-2 text-left text-[11px] font-medium text-stone-400 hover:bg-stone-50 hover:text-stone-600 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                              className="block w-full border-t border-[#ECECEC] px-3 py-2 text-left text-[11px] font-medium text-stone-400 hover:bg-stone-50 hover:text-stone-600 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
                                             >
                                               ↺ Clear
                                             </button>
@@ -555,7 +555,7 @@ export default function PlanView({
                           ))}
                         </div>
                       ) : (
-                        <div className="rounded-xl border border-[#E7E0D7] bg-[#FBF8F1] px-2 py-2.5 text-center text-[11px] text-stone-400">
+                        <div className="rounded-xl border border-[#ECECEC] bg-[#F6F6F6] px-2 py-2.5 text-center text-[11px] text-stone-400">
                           {tasks.length ? tasks[0].task : "No task today"}
                         </div>
                       )}
@@ -616,7 +616,7 @@ export default function PlanView({
           {/* Adjustments */}
           {plan.adjustments && plan.adjustments.length > 0 && (
             <div
-              className="rounded-2xl border border-[#E7E0D7] bg-white p-5"
+              className="rounded-2xl border border-[#ECECEC] bg-white p-5"
               style={{ boxShadow: cardShadow }}
             >
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">

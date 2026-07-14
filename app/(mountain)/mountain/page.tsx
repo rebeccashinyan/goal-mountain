@@ -74,14 +74,14 @@ function MountainContent() {
 
   return (
     <div className="max-w-[1180px] mx-auto mt-8 pb-10">
-      <div className="mb-6 flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: "0 10px 28px rgba(43, 58, 42, 0.08), 0 1px 2px rgba(43, 58, 42, 0.06)" }}>
+      <div className="mb-6 flex flex-col gap-4 px-1 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-forest-600">
+          <h2 className="text-3xl font-bold text-forest-950">
             Mountain Overview
-          </p>
-          <h2 className="mt-2 text-3xl font-bold text-forest-950">
-            {mountain.goal}
           </h2>
+          <p className="mt-1.5 text-base font-semibold text-stone-800">
+            {mountain.goal}
+          </p>
         </div>
         <Link
           href={`/guide?mountain_id=${mountain.id}`}

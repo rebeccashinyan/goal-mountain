@@ -183,8 +183,8 @@ All three layouts render the same `ContextNav` header: a 3-tab icon nav + a cont
 
 **Sections (top to bottom):**
 
-1. **Header card** (rounded-3xl, bg-[#FBF8F1])
-   - Left: eyebrow "Mountain Overview" + h2 (goal) + summit description + pills (progress %, current camp)
+1. **Header (plain text, no card)**
+   - Left: h2 "Mountain Overview" (text-3xl bold — the largest text) + goal as smaller subtitle below (text-base semibold)
    - Right: "Discuss With AI" button → `/guide?mountain_id=uuid`
 
 2. **Mountain Visualization** (full-width, rounded-3xl, bg-white, p-3 md:p-5)
@@ -327,7 +327,7 @@ Design (green expedition-map style, data-driven route on a fixed canvas):
 
 ### `PlanView`
 
-Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Shows: "Week in Review" card (latest auto-reflection summary + up to 3 lessons, only when < 10 days old), "Priority This Week" card, day-by-day schedule (no difficulty chip), and "Adjustments from last week" when present. (Next best action, strategy notes, and focus area are returned by the API but not displayed.)
+Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to regenerate. Header is plain text (no card, no icon tile): "Weekly Plan" h2 + "Week of …" subtitle, with the "Discuss plan with AI" / "Generate Plan" button at right. Shows: "Week in Review" card (latest auto-reflection summary + up to 3 lessons, only when < 10 days old), "Priority This Week" card, day-by-day schedule (no difficulty chip), and "Adjustments from last week" when present. (Next best action, strategy notes, and focus area are returned by the API but not displayed.)
 
 **Daily check-in flow:**
 - Every task in a non-rest day card has one compact "Status ▾" button; clicking it opens a small dropdown menu below it — "✓ Done" (forest), "✗ Missed" (summit red), and "↺ Clear" (only when a status is set; resets to neutral) — with click-outside to close. After picking, the button shows the chosen state in its color (still clickable to change until the day is finished). Selections persist immediately via `PATCH /api/plan` (statuses live inside the plan JSON).

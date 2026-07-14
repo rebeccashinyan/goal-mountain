@@ -636,3 +636,12 @@ The All Mountains page was restyled to match the new prototype:
 - **Page background** — dashboard layout is now `#F6F6F6` (chosen over `#F0F0F0`: softer against pure-white cards)
 - **Mountain cards** — pure white (`#FFFFFF`), borderless, soft shadow; camp pill removed; "Today" label in bold sentence case; progress bar and percentage share one row (bar left, bold % right)
 - **`MiniMountain` rebuilt** — the stair-step triangle is gone; the card mini is now a label-free, card-sized rendering of the same expedition map as `MountainViz` (identical trail geometry: compass base camp, green zigzag route with milestone nodes, yellow summit flag, right ridge, pines, cloud, foothills), cropped to a wider-than-tall viewBox to match the reference art
+
+---
+
+### Mountain Overview: Plain-Text Headers (2026-07-14)
+
+Matching the new overview prototype, the cream header cards were removed:
+
+- **Page header** — no card; "Mountain Overview" is now the large h2 with the goal as a smaller subtitle beneath it (hierarchy flipped — the page title is bigger than the goal). "Discuss With AI" button unchanged at right.
+- **Weekly Plan header** — card and icon tile removed; plain "Weekly Plan" heading + "Week of …" subtitle with the plan button at right.

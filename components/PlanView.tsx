@@ -235,17 +235,9 @@ export default function PlanView({
   return (
     <section className="mt-10 space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 rounded-3xl border border-[#E7E0D7] bg-[#FBF8F1] px-6 py-5 md:flex-row md:items-center md:justify-between" style={{ boxShadow: cardShadow }}>
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-forest-100">
-            <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-              <rect x="5" y="6" width="16" height="15" rx="3" fill="#EDF8F1" stroke="#1E5235" strokeWidth="1.5" />
-              <path d="M9 11H17M9 15H14" stroke="#1E5235" strokeWidth="1.5" strokeLinecap="round" />
-              <path d="M19 3.5L20 6L22.5 7L20 8L19 10.5L18 8L15.5 7L18 6L19 3.5Z" fill="#E7B85B" />
-            </svg>
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-forest-950">Weekly Plan</h2>
+      <div className="flex flex-col gap-4 px-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-forest-950">Weekly Plan</h2>
           {plan && (
             <p className="text-xs text-stone-400 mt-0.5">
               Week of{" "}
@@ -260,7 +252,6 @@ export default function PlanView({
               Turn your current camp into a focused route for the week.
             </p>
           )}
-          </div>
         </div>
         <button
           onClick={() => (plan ? startPlanTalk() : generatePlan())}

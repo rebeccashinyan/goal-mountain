@@ -127,35 +127,28 @@ Transitions: `transition-colors duration-200` — never `transition-all`.
 
 ```
 app/
-  (dashboard)/          → Dashboard layout (header + TabNav)
+  (dashboard)/          → Dashboard layout (header + ContextNav)
     page.tsx            → /  (My Mountains)
     analysis/page.tsx   → /analysis
     settings/page.tsx   → /settings
-  (mountain)/           → Mountain layout (header + MountainDetailNav)
+  (mountain)/           → Mountain layout (header + ContextNav)
     mountain/page.tsx   → /mountain?id=uuid
     insights/page.tsx   → /insights?id=uuid
-  guide/                → Guide layout (adaptive nav via GuideNav client component)
+  guide/                → Guide layout (header + ContextNav)
     page.tsx            → /guide?mountain_id=uuid (optional)
 ```
 
-### Dashboard Layout
+### Header Navigation (all layouts)
 
-- Header: `TabNav` (Mountains | Analysis | AI Guide)
-- Max content width: `max-w-[1180px] mx-auto`
-- Top padding: `px-6 pt-5 pb-3`
-- Main padding: `px-6 pb-10`
+All three layouts render the same `ContextNav` header: a 3-tab icon nav + a context dropdown pill beside it.
 
-### Mountain Layout
-
-- Header: `MountainDetailNav` (Overview | Insights | AI Guide)
-- Nav reads `?id=` or `?mountain_id=` from URL
-- Same max-width and padding as dashboard
-
-### Guide Layout
-
-- Header nav is adaptive: uses `GuideNav` client component
-  - If `?mountain_id=` in URL → renders `MountainDetailNav`
-  - Otherwise → renders `TabNav` (dashboard tabs)
+- **Tabs (always exactly 3):**
+  - Tab 1 — "All Mountains" (double-mountain icon, → `/`) in All Mountains context; becomes "Mountain Overview" (single-mountain icon, → `/mountain?id=…`) when a mountain is selected
+  - Tab 2 — "Insights" (→ `/analysis` in All Mountains context; `/insights?id=…` in mountain context)
+  - Tab 3 — "AI Guide" (→ `/guide` or `/guide?mountain_id=…`)
+- **Context dropdown** (white pill, chevron left, next to the tab nav): lists "All Mountains" + every mountain (fetched from `GET /api/mountains`). Switching keeps the current tab section — e.g. on Insights, picking a mountain goes to `/insights?id=…`; picking "All Mountains" goes to `/analysis`.
+- Context is derived from the URL: `?id=` or `?mountain_id=` present → mountain context; otherwise All Mountains.
+- Max content width: `max-w-[1180px] mx-auto`; top padding `px-6 pt-5 pb-3`; main padding `px-6 pb-10`.
 
 ---
 
@@ -207,7 +200,7 @@ app/
 
 **Sections:**
 
-1. **Header card** — "Research Agent" eyebrow, "Insights for [goal]", mountain selector (labeled "Mountain", mountain-only switcher, shown when the user has 2+ mountains; navigates to `/insights?id=…`; no "All Mountains" option — cross-mountain view lives in Analysis), "Discuss With AI" button
+1. **Header card** — "Research Agent" eyebrow, "Insights for [goal]", "Discuss With AI" button (mountain switching happens via the global context dropdown in the header nav)
 
 2. **Journey Health** — 4-stat bordered row:
    - Current Camp
@@ -306,11 +299,11 @@ app/
 
 ### `TabNav`
 
-Dashboard navigation tabs. Defined tabs: Mountains (`/`), Analysis (`/analysis`), AI Guide (`/guide`).
+Renders a set of icon tab links (pill container, tooltip labels). Exports two 3-tab configs: `allMountainsTabs` (All Mountains `/`, Insights `/analysis`, AI Guide `/guide`) and `mountainContextTabs` (Mountain Overview `/mountain`, Insights `/insights`, AI Guide `/guide`). Each tab carries a `section` (`overview | insights | guide`).
 
-### `MountainDetailNav`
+### `ContextNav`
 
-Mountain-scoped navigation. Reads `?id=` or `?mountain_id=` from URL. Links: Overview (`/mountain?id=`), Insights (`/insights?id=`), AI Guide (`/guide?mountain_id=`).
+The single header nav used by every layout. Picks the tab set from URL context (`?id=` / `?mountain_id=` → mountain context) and renders the context dropdown pill beside the tabs ("All Mountains" + every mountain from `GET /api/mountains`). Switching context navigates to the same section under the new context.
 
 ### `MiniMountain`
 

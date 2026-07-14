@@ -108,26 +108,25 @@ function InsightsIcon({ active }: { active: boolean }) {
   );
 }
 
+export type TabSection = "overview" | "insights" | "guide";
+
 export type TabConfig = {
   href: string;
   label: string;
+  section: TabSection;
   Icon: React.ComponentType<{ active: boolean }>;
 };
 
-export const dashboardTabs: TabConfig[] = [
-  { href: "/", label: "Mountains", Icon: MountainsIcon },
-  { href: "/analysis", label: "Analysis", Icon: AnalysisIcon },
-  { href: "/guide", label: "AI Guide", Icon: GuideIcon },
-];
-
-export const mountainBackTab: TabConfig[] = [
-  { href: "/", label: "Mountains", Icon: MountainsIcon },
+export const allMountainsTabs: TabConfig[] = [
+  { href: "/", label: "All Mountains", section: "overview", Icon: MountainsIcon },
+  { href: "/analysis", label: "Insights", section: "insights", Icon: AnalysisIcon },
+  { href: "/guide", label: "AI Guide", section: "guide", Icon: GuideIcon },
 ];
 
 export const mountainContextTabs: TabConfig[] = [
-  { href: "/mountain", label: "Overview", Icon: MountainIcon },
-  { href: "/insights", label: "Insights", Icon: InsightsIcon },
-  { href: "/guide", label: "AI Guide", Icon: GuideIcon },
+  { href: "/mountain", label: "Mountain Overview", section: "overview", Icon: MountainIcon },
+  { href: "/insights", label: "Insights", section: "insights", Icon: InsightsIcon },
+  { href: "/guide", label: "AI Guide", section: "guide", Icon: GuideIcon },
 ];
 
 export default function TabNav({ tabs }: { tabs: TabConfig[] }) {

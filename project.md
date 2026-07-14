@@ -611,3 +611,18 @@ The AI Guide page was completely redesigned with a two-column sidebar layout and
 **All mountains support:** New Chat from the guide page can be scoped to a specific mountain (via the header mountain switcher) or left unscoped for cross-mountain strategy discussions.
 
 **ProgressTracker log types:** Simplified from 5 → 2: `activity` ("Did it") and `missed_activity` ("Missed"). No energy/effort sliders, no analysis output, no activity list. Auto-collapses 1.8s after logging.
+
+---
+
+### Navigation Restructure: Unified 3-Tab Nav + Context Dropdown (2026-07-14)
+
+The header navigation no longer changes shape between dashboard and mountain pages (previously the mountain pages showed a back-tab + 4 tabs). Every page now shows the same two-part header:
+
+- **3-tab icon nav** — Tab 1 is "All Mountains" (`/`) in All Mountains context and becomes "Mountain Overview" (`/mountain?id=…`) when a mountain is selected; Tab 2 is Insights (`/analysis` or `/insights?id=…`); Tab 3 is AI Guide (`/guide` or `/guide?mountain_id=…`).
+- **Context dropdown pill** next to the nav — lists "All Mountains" + every mountain. Switching context keeps the current tab section (e.g. on Insights, picking a mountain goes to `/insights?id=…`; picking "All Mountains" goes to `/analysis`).
+
+**Implementation:**
+- New `components/ContextNav.tsx` — derives context from `?id=`/`?mountain_id=`, fetches mountains for the dropdown, renders `TabNav` + dropdown
+- `TabNav` configs reworked: `allMountainsTabs` + `mountainContextTabs` (each tab has a `section`)
+- All three layouts (`(dashboard)`, `(mountain)`, `guide`) use `ContextNav`; `MountainDetailNav` and `GuideNav` deleted
+- The local mountain switcher in the Insights page header was removed — the global context dropdown replaces it

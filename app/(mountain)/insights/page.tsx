@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -101,18 +101,9 @@ function buildWeek(logs: ProgressLog[]) {
 
 function InsightsContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const mountainId = searchParams.get("id");
 
   const [mountain, setMountain] = useState<MountainData | null>(null);
-  const [allMountains, setAllMountains] = useState<{ id: string; goal: string }[]>([]);
-
-  useEffect(() => {
-    fetch("/api/mountains").then(async (res) => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (res.ok) setAllMountains(await res.json());
-    });
-  }, []);
   const [patterns, setPatterns] = useState<string[]>([]);
   const [obstacles, setObstacles] = useState<Blocker[]>([]);
   const [logs, setLogs] = useState<ProgressLog[]>([]);
@@ -258,24 +249,6 @@ function InsightsContent() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {allMountains.length > 1 && (
-            <>
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Mountain</span>
-              <select
-                value={mountain.id}
-                onChange={(e) => router.push(`/insights?id=${e.target.value}`)}
-                className="max-w-[280px] truncate text-sm font-semibold text-forest-900 bg-white rounded-xl border border-[#E7E0D7] px-4 py-2.5 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-100 transition-colors duration-200 cursor-pointer"
-                style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
-                title={mountain.goal}
-              >
-                {allMountains.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.goal.length > 48 ? m.goal.slice(0, 47).trimEnd() + "…" : m.goal}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
           <Link
             href={`/guide?mountain_id=${mountain.id}&context=${encodeURIComponent("Research insights for " + mountain.goal)}`}
             className="text-sm px-4 py-2 rounded-xl bg-white text-forest-800 font-semibold border border-forest-200 hover:bg-forest-50 hover:border-forest-300 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"

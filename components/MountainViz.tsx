@@ -2,6 +2,7 @@
 
 interface Milestone {
   name: string;
+  mapLabel?: string;
   description: string;
   completed: boolean;
   current?: boolean;
@@ -13,77 +14,72 @@ interface MountainVizProps {
   currentMilestoneIndex: number;
 }
 
-const PATH_BLUE = "#4A6E96";
-const PATH_DONE = "#2C4E74";
-const SCENERY = "#C5D5E6";
-const SCENERY_SOFT = "#DCE6F0";
-const AMBER = "#E9B24A";
-const MUTED = "#66707D";
-const LEADER = "#DDE6EF";
-const ACCENT = "#46698F";
+const PATH_GREEN = "#4A9D6F";
+const PATH_DONE = "#2D6A48";
+const SCENERY = "#B8D4C0";
+const SCENERY_SOFT = "#D8E6DC";
+const SUMMIT_FLAG = "#F4D03F";
+const MUTED = "#5A7363";
+const LEADER = "#D4E0D8";
+const CURRENT = "#1E3A2A";
 
-// The route is a fixed, hand-tuned trail traced from the reference art:
-// a long gentle approach, wide switchbacks mid-mountain, near-vertical
-// at the top. Milestone nodes are placed along it by arc length, so the
-// trail keeps its shape no matter how many milestones a mountain has.
+// Fixed canvas and fixed reference geometry — labels are an overlay and
+// never influence the mountain's size, position, or proportions.
+const VIEW_W = 980;
+const VIEW_H = 620;
+
+// The route is the hand-tuned trail traced from the reference art: a long
+// gentle approach from the compass, wide switchbacks mid-mountain, and a
+// near-vertical final climb. It never rescales with the milestone count.
 const TRAIL: [number, number][] = [
   [318, 500], [470, 455], [602, 424], [555, 376], [665, 340],
   [590, 296], [686, 260], [632, 228], [654, 170],
 ];
-const PEAK: [number, number] = [680, 125];
+const PEAK: [number, number] = [680, 125]; // summit node — always exactly here
+const FULL: [number, number][] = [...TRAIL, PEAK];
 
-const SEG_LENS = TRAIL.slice(0, -1).map((p, s) =>
-  Math.hypot(TRAIL[s + 1][0] - p[0], TRAIL[s + 1][1] - p[1])
+const SEG_LENS = FULL.slice(0, -1).map((p, s) =>
+  Math.hypot(FULL[s + 1][0] - p[0], FULL[s + 1][1] - p[1])
 );
-const TRAIL_LEN = SEG_LENS.reduce((a, b) => a + b, 0);
+const CUM: number[] = SEG_LENS.reduce<number[]>((acc, len) => {
+  acc.push(acc[acc.length - 1] + len);
+  return acc;
+}, [0]);
+const TRAIL_LEN = CUM[TRAIL.length - 1]; // up to the last bend below the peak
+const TOTAL_LEN = CUM[CUM.length - 1]; // including the final climb to the peak
 
-// Point at arc distance d along the trail
+const NODE_R = 7.5;
+const CONNECTOR_LEN = 86; // short leader, stops just before the node
+const MAX_LABEL_CHARS = 34;
+
+// Point at arc distance d along the full route
 function trailPoint(d: number): [number, number] {
   let s = 0;
-  while (s < SEG_LENS.length - 1 && d > SEG_LENS[s]) {
-    d -= SEG_LENS[s];
-    s++;
-  }
-  const f = Math.min(Math.max(d / SEG_LENS[s], 0), 1);
+  while (s < SEG_LENS.length - 1 && d > CUM[s + 1]) s++;
+  const f = Math.min(Math.max((d - CUM[s]) / SEG_LENS[s], 0), 1);
   return [
-    TRAIL[s][0] + (TRAIL[s + 1][0] - TRAIL[s][0]) * f,
-    TRAIL[s][1] + (TRAIL[s + 1][1] - TRAIL[s][1]) * f,
+    FULL[s][0] + (FULL[s + 1][0] - FULL[s][0]) * f,
+    FULL[s][1] + (FULL[s + 1][1] - FULL[s][1]) * f,
   ];
 }
 
-// Path from the trail start up to arc distance d (for the traveled overlay)
+// Path from the route start up to arc distance d (for the traveled overlay)
 function trailPathTo(dist: number): string {
-  let d = `M ${TRAIL[0][0]} ${TRAIL[0][1]}`;
-  let remaining = dist;
+  let d = `M ${FULL[0][0]} ${FULL[0][1]}`;
   for (let s = 0; s < SEG_LENS.length; s++) {
-    if (remaining <= SEG_LENS[s]) {
+    if (dist <= CUM[s + 1]) {
       const [cx, cy] = trailPoint(dist);
       return d + ` L ${cx} ${cy}`;
     }
-    remaining -= SEG_LENS[s];
-    d += ` L ${TRAIL[s + 1][0]} ${TRAIL[s + 1][1]}`;
+    d += ` L ${FULL[s + 1][0]} ${FULL[s + 1][1]}`;
   }
   return d;
 }
 
-// First node clears the compass; the last lands exactly on the final
-// bend below the peak, like the reference's summit-stage node
-const nodeDist = (i: number, count: number) => (TRAIL_LEN * (i + 1.5)) / (count + 0.5);
-
-function wrapText(text: string, maxChars: number): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    if (line && (line + " " + word).length > maxChars) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = line ? line + " " + word : word;
-    }
-  }
-  if (line) lines.push(line);
-  return lines;
+function truncate(text: string): string {
+  return text.length > MAX_LABEL_CHARS
+    ? text.slice(0, MAX_LABEL_CHARS - 1).trimEnd() + "…"
+    : text;
 }
 
 function pineTree(x: number, y: number, s: number) {
@@ -97,48 +93,51 @@ function pineTree(x: number, y: number, s: number) {
 }
 
 export default function MountainViz({ milestones, summit, currentMilestoneIndex }: MountainVizProps) {
-  const viewW = 980;
-  const viewH = 620;
   const n = milestones.length;
-  const dense = n > 9;
-  const completedIdx = Math.max(0, Math.min(currentMilestoneIndex, Math.max(n - 1, 0)));
+  const completedIdx = Math.max(0, Math.min(currentMilestoneIndex, n - 1));
+  const allDone = n > 0 && milestones.every((m) => m.completed);
 
-  const nodes = milestones.map((_, i) => trailPoint(nodeDist(i, n)));
+  // Milestone nodes live on the fixed trail. With up to 8 milestones each
+  // node snaps to one of the trail's real bends (evenly spread); with more,
+  // nodes are spaced along the trail by arc length. The summit is appended
+  // as the final node, always exactly on the peak.
+  const mNodes: { p: [number, number]; d: number }[] =
+    n <= 8
+      ? milestones.map((_, i) => {
+          const idx = Math.round(((i + 1) * 8) / n);
+          return { p: TRAIL[idx], d: CUM[idx] };
+        })
+      : milestones.map((_, i) => {
+          const d = (TRAIL_LEN * (i + 1.5)) / (n + 0.5);
+          return { p: trailPoint(d), d };
+        });
+  const nodes = [...mNodes, { p: PEAK, d: TOTAL_LEN }];
 
-  // Like the reference, only label nodes with breathing room — skipped
-  // nodes stay as plain dots (full name in tooltip). The current
-  // milestone is always labeled.
-  const gap = dense ? 24 : 0;
-  const labeled: boolean[] = new Array(n).fill(false);
-  if (n > 0) labeled[completedIdx] = true;
-  let lastLabelY = Infinity;
-  for (let i = 0; i < n; i++) {
-    if (i === completedIdx) {
-      lastLabelY = nodes[i][1];
-      continue;
-    }
-    const y = nodes[i][1];
-    const clearsPrev = lastLabelY - y >= gap;
-    const clearsCurrent = Math.abs(y - nodes[completedIdx][1]) >= gap;
-    if (clearsPrev && clearsCurrent) {
-      labeled[i] = true;
-      lastLabelY = y;
-    }
-  }
+  const routeD = FULL.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ");
+  const traveledEnd = allDone ? nodes.length - 1 : completedIdx;
+  const traveledD = n > 0 ? trailPathTo(nodes[traveledEnd].d) : "";
 
-  const fullRoute =
-    TRAIL.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0]} ${p[1]}`).join(" ") +
-    ` L ${PEAK[0]} ${PEAK[1]}`;
-
-  const nodeR = dense ? 7 : 8.5;
-  const labelSize = dense ? 13 : 14;
+  const metas = [
+    ...milestones.map((m, i) => ({
+      label: truncate(`${i + 1}. ${m.mapLabel?.trim() || m.name}`),
+      tooltip: `${m.name} — ${m.description}`,
+      isDone: m.completed || i < completedIdx,
+      isCurrent: i === completedIdx && !m.completed,
+    })),
+    {
+      label: `${n + 1}. Summit`,
+      tooltip: `Summit — ${summit}`,
+      isDone: allDone,
+      isCurrent: false,
+    },
+  ];
 
   return (
     <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${viewW} ${viewH}`} className="w-full h-auto min-w-[760px]">
+      <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="w-full h-auto min-w-[760px]">
         <title>{summit}</title>
 
-        <rect width={viewW} height={viewH} rx="28" fill="#F6F8FB" />
+        <rect width={VIEW_W} height={VIEW_H} rx="28" fill="#F9F7F3" />
 
         {/* Left shoulder — slope line the upper trail climbs across */}
         <path
@@ -178,99 +177,57 @@ export default function MountainViz({ milestones, summit, currentMilestoneIndex 
         />
 
         {/* Route */}
-        <path d={fullRoute} fill="none" stroke={PATH_BLUE} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-        {n > 0 && (
-          <path
-            d={trailPathTo(nodeDist(completedIdx, n))}
-            fill="none"
-            stroke={PATH_DONE}
-            strokeWidth="4.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+        <path d={routeD} fill="none" stroke={PATH_GREEN} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+        {traveledD && (
+          <path d={traveledD} fill="none" stroke={PATH_DONE} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
         )}
 
-        {/* Milestone nodes + labels */}
-        {milestones.map((m, i) => {
-          const [x, y] = nodes[i];
-          const isCurrent = i === completedIdx && !m.completed;
-          const isDone = m.completed || i < completedIdx;
-          const shortName = m.name.split(":")[0].trim();
+        {/* Summit flag — rises from the summit node */}
+        <line x1={PEAK[0]} y1={PEAK[1]} x2={PEAK[0]} y2={PEAK[1] - 62} stroke="#2B3442" strokeWidth="2.5" />
+        <polygon
+          points={`${PEAK[0] + 1},${PEAK[1] - 62} ${PEAK[0] + 36},${PEAK[1] - 52} ${PEAK[0] + 1},${PEAK[1] - 42}`}
+          fill={SUMMIT_FLAG}
+        />
+
+        {/* Label overlay — one label + short connector per node, anchored to
+            the node's exact position; never moves the route or mountain */}
+        {nodes.map(({ p: [x, y] }, i) => {
+          const meta = metas[i];
+          const connEnd = x - NODE_R - 4;
           return (
             <g key={i}>
-              <title>{`${m.name} — ${m.description}`}</title>
-              {labeled[i] && (
-                <>
-                  <line x1={x - 92} y1={y} x2={x - nodeR - 4} y2={y} stroke={LEADER} strokeWidth="1.2" />
-                  <text
-                    x={x - 100}
-                    y={y + labelSize * 0.34}
-                    textAnchor="end"
-                    fill={isCurrent ? "#1F3A5F" : MUTED}
-                    fontSize={labelSize}
-                    fontFamily="var(--font-body), system-ui, sans-serif"
-                    fontWeight={isCurrent ? "700" : "500"}
-                  >
-                    {i + 1}. {shortName}
-                  </text>
-                </>
-              )}
+              <title>{meta.tooltip}</title>
+              <line x1={connEnd - CONNECTOR_LEN} y1={y} x2={connEnd} y2={y} stroke={LEADER} strokeWidth="1.2" />
+              <text
+                x={connEnd - CONNECTOR_LEN - 8}
+                y={y + 4.7}
+                textAnchor="end"
+                fill={meta.isCurrent ? CURRENT : MUTED}
+                fontSize="13.5"
+                fontFamily="var(--font-body), system-ui, sans-serif"
+                fontWeight={meta.isCurrent ? "700" : "500"}
+              >
+                {meta.label}
+              </text>
               <circle
                 cx={x}
                 cy={y}
-                r={nodeR}
-                fill={isDone ? PATH_BLUE : isCurrent ? AMBER : "#FFFFFF"}
-                stroke={isDone || isCurrent ? PATH_BLUE : "#7C99B8"}
-                strokeWidth="2.4"
+                r={NODE_R}
+                fill={meta.isDone ? PATH_GREEN : meta.isCurrent ? SUMMIT_FLAG : "#FFFFFF"}
+                stroke={meta.isDone || meta.isCurrent ? PATH_GREEN : "#8BA894"}
+                strokeWidth="2.2"
               />
-              {isDone && <circle cx={x} cy={y} r={nodeR * 0.34} fill="#FFFFFF" />}
+              {meta.isDone && <circle cx={x} cy={y} r={NODE_R * 0.34} fill="#FFFFFF" />}
             </g>
           );
         })}
 
         {/* Compass — base camp start */}
         <g transform={`translate(${TRAIL[0][0]}, ${TRAIL[0][1]})`}>
-          <circle r="22" fill="#FFFFFF" stroke={PATH_BLUE} strokeWidth="3" />
-          <path d="M 0 -12 L 3.2 -3.2 L 12 0 L 3.2 3.2 L 0 12 L -3.2 3.2 L -12 0 L -3.2 -3.2 Z" fill={AMBER} />
-          <circle r="2.4" fill="#2B3442" />
+          <circle r="22" fill="#FFFFFF" stroke={PATH_DONE} strokeWidth="3" />
+          <path d="M 0 -12 L 3.2 -3.2 L 12 0 L 3.2 3.2 L 0 12 L -3.2 3.2 L -12 0 L -3.2 -3.2 Z" fill={PATH_DONE} />
+          <circle r="2.4" fill="#FFFFFF" />
         </g>
-
-        {/* Summit flag */}
-        <line x1={PEAK[0]} y1={PEAK[1]} x2={PEAK[0]} y2={PEAK[1] - 62} stroke="#2B3442" strokeWidth="2.5" />
-        <polygon
-          points={`${PEAK[0] + 1},${PEAK[1] - 62} ${PEAK[0] + 36},${PEAK[1] - 52} ${PEAK[0] + 1},${PEAK[1] - 42}`}
-          fill={AMBER}
-        />
-        {(() => {
-          const allLines = wrapText(`summit: ${summit}`, 32);
-          const lines = allLines.slice(0, 5);
-          if (allLines.length > 5) lines[4] += "…";
-          return lines.map((line, i) => (
-            <text
-              key={i}
-              x={PEAK[0] + 58}
-              y={PEAK[1] - 27 + i * 20}
-              fontSize="14"
-              fontFamily="var(--font-body), system-ui, sans-serif"
-            >
-              {i === 0 ? (
-                <>
-                  <tspan fill={ACCENT} fontWeight="700">summit:</tspan>
-                  <tspan fill={MUTED}>{line.slice("summit:".length)}</tspan>
-                </>
-              ) : (
-                <tspan fill={MUTED}>{line}</tspan>
-              )}
-            </text>
-          ));
-        })()}
-
-        {/* Base camp legend */}
-        <rect x="50" y="548" width="56" height="5" rx="2.5" fill={ACCENT} />
-        <rect x="240" y="548" width="66" height="5" rx="2.5" fill={ACCENT} />
-        <text x="50" y="588" fill={MUTED} fontSize="15" fontFamily="var(--font-body), system-ui, sans-serif">
-          Base camp – begin your journey
-        </text>
       </svg>
     </div>
   );

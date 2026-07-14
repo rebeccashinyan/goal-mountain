@@ -260,7 +260,7 @@ function InsightsContent() {
         <div className="flex items-center gap-3">
           {allMountains.length > 1 && (
             <>
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Context</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Mountain</span>
               <select
                 value={mountain.id}
                 onChange={(e) => router.push(`/insights?id=${e.target.value}`)}

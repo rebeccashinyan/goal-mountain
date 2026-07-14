@@ -57,7 +57,6 @@ function GuideContent() {
   const [executingAction, setExecutingAction] = useState(false);
   const [planProposals, setPlanProposals] = useState<Record<string, PlanProposal>>({});
   const [selectedMountainId, setSelectedMountainId] = useState<string | null>(paramMountainId);
-  const [showAllProactive, setShowAllProactive] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -253,34 +252,12 @@ function GuideContent() {
     setExecutingAction(false);
   }
 
-  // Sidebar follows the context selector: a specific mountain shows only its
-  // conversations; "All Mountains" shows everything
-  const contextChats = selectedMountainId
-    ? chats.filter((c) => c.mountain_id === selectedMountainId)
-    : chats;
-  const proactiveChats = contextChats.filter((c) => c.type === "ai_proactive");
-  const userChats = contextChats.filter((c) => c.type === "user_initiated");
+  const proactiveChats = chats.filter((c) => c.type === "ai_proactive");
+  const userChats = chats.filter((c) => c.type === "user_initiated");
 
-  async function deleteChat(chatId: string, title: string) {
-    if (!window.confirm(`Delete "${title}"? This can't be undone.`)) return;
-    const res = await fetch(`/api/chats?id=${chatId}`, { method: "DELETE" });
-    if (res.ok) {
-      setChats((prev) => prev.filter((c) => c.id !== chatId));
-      if (selectedChatId === chatId) {
-        setSelectedChatId(null);
-        setMessages([]);
-        setPlanProposals({});
-      }
-    }
-  }
-
-  const PROACTIVE_PREVIEW = 4;
   const filteredProactive = search
     ? proactiveChats.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
     : proactiveChats;
-  const visibleProactive =
-    search || showAllProactive ? filteredProactive : filteredProactive.slice(0, PROACTIVE_PREVIEW);
-  const hiddenProactiveCount = filteredProactive.length - visibleProactive.length;
   const filteredUser = search
     ? userChats.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
     : userChats;
@@ -318,29 +295,16 @@ function GuideContent() {
         </div>
         {/* Context selector */}
         <div className="flex items-center gap-3 shrink-0">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Mountain</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Context</span>
           <select
             value={selectedMountainId || "all"}
-            onChange={(e) => {
-              const next = e.target.value === "all" ? null : e.target.value;
-              setSelectedMountainId(next);
-              // Close the open chat if it doesn't belong to the new context
-              const current = chats.find((c) => c.id === selectedChatId);
-              if (next && current && current.mountain_id !== next) {
-                setSelectedChatId(null);
-                setMessages([]);
-                setPlanProposals({});
-              }
-            }}
-            className="max-w-[320px] truncate text-sm font-semibold text-forest-900 bg-white rounded-xl border border-[#E7E0D7] px-4 py-2.5 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-100 transition-colors duration-200 cursor-pointer"
+            onChange={(e) => setSelectedMountainId(e.target.value === "all" ? null : e.target.value)}
+            className="text-sm font-semibold text-forest-900 bg-white rounded-xl border border-[#E7E0D7] px-4 py-2.5 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-100 transition-colors duration-200 cursor-pointer"
             style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
-            title={mountains.find((m) => m.id === selectedMountainId)?.goal}
           >
             <option value="all">All Mountains</option>
             {mountains.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.goal.length > 48 ? m.goal.slice(0, 47).trimEnd() + "…" : m.goal}
-              </option>
+              <option key={m.id} value={m.id}>{m.goal}</option>
             ))}
           </select>
         </div>
@@ -386,44 +350,24 @@ function GuideContent() {
               <p className="text-[11px] text-stone-400 px-1">No messages yet — the AI will reach out if it detects you&apos;re off track.</p>
             ) : (
               <div className="space-y-0.5">
-                {visibleProactive.map((chat) => (
-                  <div key={chat.id} className="group relative">
-                    <button
-                      type="button"
-                      onClick={() => loadChat(chat.id)}
-                      className={`w-full text-left px-3 py-2.5 pr-8 rounded-xl transition-colors duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
-                        selectedChatId === chat.id ? "bg-white shadow-sm" : "hover:bg-white/60"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold text-stone-700 truncate">{chat.title}</p>
-                        {chat.unread && <span className="w-2 h-2 rounded-full bg-[#E07A6E] shrink-0" />}
-                      </div>
-                      {chat.last_message && (
-                        <p className="text-[11px] text-stone-400 truncate mt-0.5 leading-snug">{chat.last_message}</p>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteChat(chat.id, chat.title)}
-                      aria-label={`Delete ${chat.title}`}
-                      className="absolute right-1.5 top-1.5 rounded-md p-1 text-stone-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-summit hover:bg-red-50 active:scale-[0.92] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-summit transition-colors duration-150"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4m2 0v9.333a1.333 1.333 0 01-1.334 1.334H4.667a1.333 1.333 0 01-1.334-1.334V4h9.334z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-                {(hiddenProactiveCount > 0 || (!search && showAllProactive && filteredProactive.length > PROACTIVE_PREVIEW)) && (
+                {filteredProactive.map((chat) => (
                   <button
+                    key={chat.id}
                     type="button"
-                    onClick={() => setShowAllProactive(!showAllProactive)}
-                    className="w-full px-3 py-1.5 text-left text-[11px] font-semibold text-forest-700 hover:text-forest-600 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-150"
+                    onClick={() => loadChat(chat.id)}
+                    className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
+                      selectedChatId === chat.id ? "bg-white shadow-sm" : "hover:bg-white/60"
+                    }`}
                   >
-                    {showAllProactive ? "Show less" : `Show ${hiddenProactiveCount} more`}
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-stone-700 truncate">{chat.title}</p>
+                      {chat.unread && <span className="w-2 h-2 rounded-full bg-[#E07A6E] shrink-0" />}
+                    </div>
+                    {chat.last_message && (
+                      <p className="text-[11px] text-stone-400 truncate mt-0.5 leading-snug">{chat.last_message}</p>
+                    )}
                   </button>
-                )}
+                ))}
               </div>
             )}
           </div>
@@ -438,30 +382,19 @@ function GuideContent() {
             ) : (
               <div className="space-y-0.5">
                 {filteredUser.map((chat) => (
-                  <div key={chat.id} className="group relative">
-                    <button
-                      type="button"
-                      onClick={() => loadChat(chat.id)}
-                      className={`w-full text-left px-3 py-2.5 pr-8 rounded-xl transition-colors duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
-                        selectedChatId === chat.id ? "bg-white shadow-sm" : "hover:bg-white/60"
-                      }`}
-                    >
-                      <p className="text-xs font-semibold text-stone-700 truncate">{chat.title}</p>
-                      {chat.last_message && (
-                        <p className="text-[11px] text-stone-400 truncate mt-0.5 leading-snug">{chat.last_message}</p>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteChat(chat.id, chat.title)}
-                      aria-label={`Delete ${chat.title}`}
-                      className="absolute right-1.5 top-1.5 rounded-md p-1 text-stone-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-summit hover:bg-red-50 active:scale-[0.92] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-summit transition-colors duration-150"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4m2 0v9.333a1.333 1.333 0 01-1.334 1.334H4.667a1.333 1.333 0 01-1.334-1.334V4h9.334z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    key={chat.id}
+                    type="button"
+                    onClick={() => loadChat(chat.id)}
+                    className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 ${
+                      selectedChatId === chat.id ? "bg-white shadow-sm" : "hover:bg-white/60"
+                    }`}
+                  >
+                    <p className="text-xs font-semibold text-stone-700 truncate">{chat.title}</p>
+                    {chat.last_message && (
+                      <p className="text-[11px] text-stone-400 truncate mt-0.5 leading-snug">{chat.last_message}</p>
+                    )}
+                  </button>
                 ))}
               </div>
             )}

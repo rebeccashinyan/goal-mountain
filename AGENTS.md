@@ -178,6 +178,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 ```json
 {
   "name": "specific stage name (a concrete capability or outcome, never generic labels)",
+  "mapLabel": "short 2-4 word display name shown on the mountain map (e.g. 'Ship 3 AI Projects')",
   "description": "1-sentence description",
   "type": "camp",
   "estimated_duration": "e.g. 2 weeks",

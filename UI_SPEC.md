@@ -207,7 +207,7 @@ app/
 
 **Sections:**
 
-1. **Header card** — "Research Agent" eyebrow, "Insights for [goal]", context selector (mountain-only switcher, shown when the user has 2+ mountains; navigates to `/insights?id=…`; no "All Mountains" option — cross-mountain view lives in Analysis), "Discuss With AI" button
+1. **Header card** — "Research Agent" eyebrow, "Insights for [goal]", mountain selector (labeled "Mountain", mountain-only switcher, shown when the user has 2+ mountains; navigates to `/insights?id=…`; no "All Mountains" option — cross-mountain view lives in Analysis), "Discuss With AI" button
 
 2. **Journey Health** — 4-stat bordered row:
    - Current Camp
@@ -279,8 +279,8 @@ app/
 - "New Chat" button (+ icon, creates a `user_initiated` chat in Supabase)
 - Search input (filters both sections by title)
 - **"Messages from AI" section** — always visible; shows `ai_proactive` chats with orange unread dot (`#E07A6E`) and last_message preview, collapsed to the 4 most recent with a "Show N more" / "Show less" toggle (search always covers all). If empty: "No messages yet — the AI will reach out if it detects you're off track."
-- **Context selector** (header) — mountain goals truncate at ~48 chars with ellipsis; full goal on hover via `title`. (Intake agent now also keeps `goal` a short headline ≤ ~50 chars; details live in constraints/current_level.)
-- **Context filters the sidebar**: selecting a mountain shows only that mountain's chats + AI messages; "All Mountains" shows everything. Switching context away from the open chat's mountain closes the chat pane.
+- **Mountain selector** (header, labeled "Mountain") — goals truncate at ~48 chars with ellipsis; full goal on hover via `title`. (Intake agent now also keeps `goal` a short headline ≤ ~50 chars; details live in constraints/current_level.)
+- **The mountain selector filters the sidebar**: selecting a mountain shows only that mountain's chats + AI messages; "All Mountains" shows everything. Switching context away from the open chat's mountain closes the chat pane.
 - **Chat deletion**: every sidebar item (AI messages and chats) reveals a trash icon on hover → `window.confirm` → `DELETE /api/chats?id=` (messages cascade). Deleting the open chat clears the pane.
 - **"Chats" section** — always visible; shows `user_initiated` chats with title + last_message preview. If empty: "No chats yet. Click 'New Chat' to start."
 - Selected chat highlighted with white bg + shadow
@@ -320,16 +320,17 @@ Small SVG mountain visualization used on dashboard cards. Props: `progress`, `to
 
 Full-size SVG "Expedition map" visualization used on the Overview page. Props: `milestones`, `summit`, `currentMilestoneIndex`.
 
-Design (blue expedition-map style):
-- Light blue-gray card background (`#F7F9FC`), rounded corners
-- Beside the peak flag: "summit:" prefix (bold accent blue) followed by the mountain's summit statement in muted gray, word-wrapped to ~32 chars/line, max 5 lines with ellipsis (the overview header card shows only the goal title, not the summit line)
-- Right side: light-blue outlined mountain silhouette with scenery (foothill ridge lines, pine trees, cloud)
-- Fixed hand-tuned trail in slate blue (`#4A6E96`) traced from the reference art: long gentle approach from the compass, wide switchbacks mid-mountain, near-vertical final climb onto the peak. Milestone nodes are placed along the trail by arc length, so the trail shape never distorts regardless of milestone count; the last milestone lands on the final bend below the peak
-- Node states: upcoming = white with blue stroke, current = amber fill (`#E9B24A`) with bold navy label, completed = blue fill with white center dot; completed segments render darker/thicker (`#2E5075`)
-- Labels: thin leader line to a right-aligned short label on the left: `{index+1}. {stage}`, where stage is the milestone name up to the colon (e.g. "4. Camp 2"). Like the reference, labels are skipped where vertical space is tight (< 24px when > 9 milestones) — skipped nodes stay as plain dots; the current milestone is always labeled. Full name + description shown as native tooltip on every node.
-- Start point: compass marker (white circle, amber 4-point star) at base camp
-- Peak: dark flag pole with amber triangle flag + blue bold "summit" label
-- Bottom-left legend: two slate dashes + "Base camp – begin your journey"
+Design (green expedition-map style, data-driven route on a fixed canvas):
+- Fixed 980×650 viewBox — the canvas, mountain silhouette, peak, trees, cloud and background never move or scale with milestone count
+- Warm off-white card background (`#F9F7F3`), rounded corners
+- Route: the fixed hand-tuned trail traced from the reference art (980×620 canvas) — compass at (318, 500), long gentle approach, wide switchbacks mid-mountain, near-vertical final climb, summit node always exactly on the peak (680, 125) under the flag. The trail, mountain, and scenery never rescale, move, or restretch with milestone count
+- Node placement: with ≤8 milestones each node snaps to one of the trail's real bends (evenly spread across the 8 bends); with more, nodes are spaced along the trail by arc length. The summit is appended as the final node
+- Labels are a pure SVG overlay that never affects the map's layout: one label + one short horizontal connector (86px, stopping just before the node) per node, drawn at the node's exact y, text right-anchored (`textAnchor="end"`) just left of its own node
+- Label text: single line, `{index+1}. {mapLabel}` — `mapLabel` is a short 2-4 word display name the Generator produces per milestone (falls back to the full name for older mountains), truncated at ~34 chars with an ellipsis; full name + description shown as native tooltip. 13.5px, regular weight; current milestone bold dark-green. The summit's visible label is always `{n}. Summit` — the full summit statement lives in its tooltip, never rendered in the map
+- Node states: upcoming = white with sage stroke (`#8BA894`), current = yellow fill (`#F4D03F`), completed = green fill (`#4A9D6F`) with white center dot; traveled route renders darker/thicker (`#2D6A48`)
+- Scenery (all fixed): left shoulder slope line, green-tinted right ridge silhouette from the peak, foothill lines, pine trees, cloud
+- Peak: dark flag pole rising from the summit node + yellow triangle flag
+- No bottom legend or extra captions
 
 ### `PlanView`
 

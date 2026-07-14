@@ -45,6 +45,7 @@ Return a JSON object with this exact shape:
   "milestones": [
     {
       "name": "specific stage name",
+      "mapLabel": "very short label for the mountain map, 2-4 words (e.g. 'Build AI Design Portfolio')",
       "description": "1-sentence description of what this milestone involves",
       "type": "camp",
       "estimated_duration": "e.g. 2 weeks"
@@ -55,6 +56,7 @@ Return a JSON object with this exact shape:
 Rules:
 - Create 5-8 milestones. Each one is a meaningful stage of the journey — a real capability or outcome worth celebrating
 - Every milestone name must state the concrete capability or outcome it represents (e.g. "Hold a 15-minute everyday conversation") — never generic labels like "Checkpoint 3" or "Phase 2"
+- mapLabel is the short display name shown on the mountain map: 2-4 words, no punctuation, still specific (e.g. "Ship 3 AI Projects", not "Projects")
 - Order milestones from base camp (earliest/easiest) to summit (latest/hardest)
 - The last milestone should lead directly to the summit
 - Make milestones specific and actionable, not vague
@@ -87,12 +89,14 @@ Rules:
     (
       m: {
         name: string;
+        mapLabel?: string;
         description: string;
         estimated_duration?: string;
       },
       i: number
     ) => ({
       name: m.name,
+      mapLabel: m.mapLabel || "",
       description: m.description,
       type: "camp",
       estimated_duration: m.estimated_duration || "",

@@ -290,10 +290,6 @@ function GuideContent() {
     ? mountains.find((m) => m.id === selectedChat.mountain_id)?.goal
     : "All Mountains";
 
-  const currentMountainLabel = selectedMountainId
-    ? mountains.find((m) => m.id === selectedMountainId)?.goal
-    : null;
-
   return (
     <div className="max-w-[1180px] mx-auto flex flex-col gap-3 mt-4" style={{ height: "calc(100vh - 80px)" }}>
 
@@ -491,9 +487,6 @@ function GuideContent() {
                   <p className="text-[11px] text-stone-400">{selectedMountainLabel}</p>
                 )}
               </div>
-              {currentMountainLabel && (
-                <span className="text-[11px] font-semibold text-forest-700 bg-forest-50 border border-forest-100 rounded-lg px-2.5 py-1">{currentMountainLabel}</span>
-              )}
             </div>
 
             {/* Messages */}

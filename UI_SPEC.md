@@ -271,7 +271,7 @@ All three layouts render the same `ContextNav` header: a 3-tab icon nav + a cont
 - Selected chat highlighted with white bg + shadow
 
 **Chat panel (flex-1, bg-white):**
-- **Chat header** (border-b): selected chat title + small mountain name pill (forest-50 bg)
+- **Chat header** (border-b): selected chat title + gray mountain goal subtitle (no pill)
 - **Messages area** (bg-[#F6F6F6]):
   - Empty state: 3 starter question chips
   - User bubbles: right-aligned, forest-700 bg, white text

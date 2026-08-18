@@ -77,7 +77,8 @@ export default function PlanView({
   onPlanTalk?: (planSummary: string) => void;
   refreshKey?: number;
 }) {
-  const [plan, setPlan] = useState<PlanData | null>(null);
+  const [plans, setPlans] = useState<PlanData[]>([]);
+  const [weekIndex, setWeekIndex] = useState(0);
   const [reflection, setReflection] = useState<ReflectionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -88,15 +89,17 @@ export default function PlanView({
   const [openPicker, setOpenPicker] = useState<string | null>(null);
   const [openDayMenu, setOpenDayMenu] = useState<string | null>(null);
 
+  const plan = plans[weekIndex] ?? null;
+  const isLatestWeek = weekIndex === 0;
+
   const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
 
   const fetchPlan = useCallback(async () => {
     const res = await fetch(`/api/plan?mountain_id=${mountainId}`);
     if (res.ok) {
-      const plans = await res.json();
-      if (plans.length) {
-        setPlan(plans[0]);
-      }
+      const data: PlanData[] = await res.json();
+      setPlans(data);
+      setWeekIndex(0);
     }
     setLoading(false);
   }, [mountainId]);
@@ -132,7 +135,8 @@ export default function PlanView({
 
     if (res.ok) {
       const data = await res.json();
-      setPlan(data);
+      setPlans((prev) => [data, ...prev]);
+      setWeekIndex(0);
       fetchReflection();
     }
 
@@ -149,7 +153,7 @@ export default function PlanView({
   }
 
   function updatePlanJson(updated: PlanData) {
-    setPlan(updated);
+    setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     fetch("/api/plan", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -239,13 +243,38 @@ export default function PlanView({
         <div>
           <h2 className="text-2xl font-bold text-forest-950">Weekly Plan</h2>
           {plan && (
-            <p className="text-xs text-stone-400 mt-0.5">
-              Week of{" "}
-              {new Date(plan.week_start + "T00:00:00").toLocaleDateString(
-                "en-US",
-                { month: "short", day: "numeric" }
-              )}
-            </p>
+            <div className="mt-1 flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="Previous week"
+                onClick={() => setWeekIndex((i) => Math.min(i + 1, plans.length - 1))}
+                disabled={weekIndex >= plans.length - 1}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-stone-400 hover:bg-forest-50 hover:text-forest-700 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400 active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+              >
+                <svg width="6" height="10" viewBox="0 0 6 10" fill="none" aria-hidden="true">
+                  <path d="M5.25 1L1 5L5.25 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <p className="min-w-[86px] text-center text-xs text-stone-400">
+                {isLatestWeek ? "This week" : "Week of"}{" "}
+                {!isLatestWeek &&
+                  new Date(plan.week_start + "T00:00:00").toLocaleDateString(
+                    "en-US",
+                    { month: "short", day: "numeric" }
+                  )}
+              </p>
+              <button
+                type="button"
+                aria-label="Next week"
+                onClick={() => setWeekIndex((i) => Math.max(i - 1, 0))}
+                disabled={weekIndex <= 0}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-stone-400 hover:bg-forest-50 hover:text-forest-700 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400 active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+              >
+                <svg width="6" height="10" viewBox="0 0 6 10" fill="none" aria-hidden="true">
+                  <path d="M0.75 1L5 5L0.75 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
           )}
           {!plan && (
             <p className="mt-1 text-sm text-stone-500">
@@ -324,7 +353,7 @@ export default function PlanView({
       {plan && (
         <>
           {/* Week in review — written automatically by the Reflection Agent */}
-          {reflectionIsFresh && (
+          {reflectionIsFresh && isLatestWeek && (
             <div
               className="rounded-2xl border border-[#ECECEC] bg-[#F6F6F6] p-5"
               style={{ boxShadow: cardShadow }}
@@ -375,9 +404,10 @@ export default function PlanView({
                     !tasks.length ||
                     (tasks.length === 1 &&
                       tasks[0].task.toLowerCase().includes("rest"));
-                  const isToday = dayName === todayName;
+                  const isToday = isLatestWeek && dayName === todayName;
                   const canCheckIn = !!day && !isRest && !day.finished;
-                  const isFuture = WEEK_DAYS.indexOf(dayName) > WEEK_DAYS.indexOf(todayName);
+                  const isFuture =
+                    isLatestWeek && WEEK_DAYS.indexOf(dayName) > WEEK_DAYS.indexOf(todayName);
 
                   const pill = day?.finished || (isRest && !isFuture)
                     ? { text: "✓ Day complete", cls: "bg-forest-50 text-forest-700" }

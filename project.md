@@ -157,7 +157,8 @@ Milestones:
 Conversational intake before a mountain is created. Extracts a structured goal from freeform conversation.
 
 **Responsibilities**
-- Ask clarifying questions one at a time
+- Ask clarifying questions one at a time — 3–4 follow-up turns is the target, 5 the normal maximum
+- Aim for minimum viable understanding, not maximum information: only ask what would materially change the mountain's milestones, order, pacing, or major constraints. Finer preferences are learned later by Planning, Guide, Reflection, and Memory
 - Refine vague goals into specific, actionable ones
 - Collect current level, target date, and constraints
 - Confirm the goal with the user before handing off to the Generator

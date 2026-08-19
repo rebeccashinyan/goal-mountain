@@ -2,7 +2,7 @@ import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
-  const { mountain_id, available_time, user_constraints } =
+  const { mountain_id, available_time, user_constraints, week_start } =
     await request.json();
 
   if (!mountain_id) {
@@ -19,6 +19,17 @@ export async function POST(request: Request) {
     return Response.json({ error: "Mountain not found" }, { status: 404 });
   }
 
+  // Local calendar fields — toISOString() would convert to UTC and shift
+  // the date back a day in timezones ahead of UTC.
+  const today = new Date();
+  const currentMonday = new Date(today);
+  currentMonday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const currentWeekStart = `${currentMonday.getFullYear()}-${String(currentMonday.getMonth() + 1).padStart(2, "0")}-${String(currentMonday.getDate()).padStart(2, "0")}`;
+  const weekStart = week_start || currentWeekStart;
+  // Planning ahead of the real current week — the week being planned hasn't
+  // happened yet, so there's nothing to reflect on.
+  const isFutureWeek = weekStart > currentWeekStart;
+
   const { data: pastPlans } = await supabase
     .from("weekly_plans")
     .select("*")
@@ -29,7 +40,7 @@ export async function POST(request: Request) {
   // Week rollover: if the previous plan hasn't been reflected on yet, run the
   // Reflection Agent first (auto mode) so this plan learns from that week.
   // Fires for every plan-generation path — form, guide chat, mini chat.
-  if (pastPlans?.length) {
+  if (pastPlans?.length && !isFutureWeek) {
     const { data: latestReflections } = await supabase
       .from("reflections")
       .select("created_at")
@@ -117,6 +128,7 @@ Summit: ${mountain.summit}
 Current camp: ${currentMilestone?.name || "Getting started"}
 Progress: ${mountain.progress}%
 Target date: ${mountain.race_date || "Not set"}
+Week being planned: ${weekStart}${isFutureWeek ? " (being planned in advance, before this week starts)" : ""}
 Available time: ${available_time || "Not specified"}
 User constraints: ${user_constraints || "None"}
 ${pastPlans?.length ? `\nRecent plan history: ${JSON.stringify(pastPlans.map((p: { priority_recommendation: string; strategy_notes: string }) => ({ recommendation: p.priority_recommendation, notes: p.strategy_notes })))}` : ""}
@@ -135,10 +147,6 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
   }
 
   const result = JSON.parse(content);
-  const today = new Date();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  const weekStart = monday.toISOString().split("T")[0];
 
   const { data, error } = await supabase
     .from("weekly_plans")

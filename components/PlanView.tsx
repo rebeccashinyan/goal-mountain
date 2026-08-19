@@ -66,6 +66,35 @@ const loadFeelOptions: { value: string; label: string }[] = [
   { value: "heavier", label: "Heavier than planned" },
 ];
 
+// Formats using local calendar fields — avoids the UTC-conversion day-shift
+// that toISOString() causes in timezones ahead of UTC.
+function toLocalISODate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function mondayOf(date: Date): string {
+  const d = new Date(date);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return toLocalISODate(d);
+}
+
+function addDays(weekStart: string, days: number): string {
+  const [year, month, day] = weekStart.split("-").map(Number);
+  const d = new Date(year, month - 1, day);
+  d.setDate(d.getDate() + days);
+  return toLocalISODate(d);
+}
+
+function formatWeekLabel(weekStart: string): string {
+  return new Date(weekStart + "T00:00:00").toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function PlanView({
   mountainId,
   onDailyReview,
@@ -78,7 +107,7 @@ export default function PlanView({
   refreshKey?: number;
 }) {
   const [plans, setPlans] = useState<PlanData[]>([]);
-  const [weekIndex, setWeekIndex] = useState(0);
+  const [viewedWeekStart, setViewedWeekStart] = useState<string | null>(null);
   const [reflection, setReflection] = useState<ReflectionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -89,18 +118,33 @@ export default function PlanView({
   const [openPicker, setOpenPicker] = useState<string | null>(null);
   const [openDayMenu, setOpenDayMenu] = useState<string | null>(null);
 
-  const plan = plans[weekIndex] ?? null;
-  const isLatestWeek = weekIndex === 0;
-
   const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  const todayWeekStart = mondayOf(new Date());
+
+  const plan = viewedWeekStart
+    ? plans.find((p) => p.week_start === viewedWeekStart) ?? null
+    : null;
+  const isCurrentCalendarWeek = viewedWeekStart === todayWeekStart;
+  const isWeekInFuture = !!viewedWeekStart && viewedWeekStart > todayWeekStart;
+
+  const weekStarts = plans.map((p) => p.week_start);
+  const minWeekStart = weekStarts.length
+    ? weekStarts.reduce((a, b) => (a < b ? a : b))
+    : todayWeekStart;
+  const frontierWeekStart = [...weekStarts, todayWeekStart].reduce((a, b) =>
+    a > b ? a : b
+  );
+  const maxNavigableWeekStart = addDays(frontierWeekStart, 7);
+  const canGoPrev = !!viewedWeekStart && plans.length > 0 && viewedWeekStart > minWeekStart;
+  const canGoNext = !!viewedWeekStart && viewedWeekStart < maxNavigableWeekStart;
 
   const fetchPlan = useCallback(async () => {
     const res = await fetch(`/api/plan?mountain_id=${mountainId}`);
     if (res.ok) {
       const data: PlanData[] = await res.json();
       setPlans(data);
-      setWeekIndex(0);
     }
+    setViewedWeekStart(mondayOf(new Date()));
     setLoading(false);
   }, [mountainId]);
 
@@ -119,14 +163,18 @@ export default function PlanView({
   }, [fetchPlan, fetchReflection, refreshKey]);
 
   async function generatePlan() {
-    if (generating) return;
+    if (generating || !viewedWeekStart) return;
     setGenerating(true);
 
-    const body: Record<string, string> = { mountain_id: mountainId };
+    const body: Record<string, string> = {
+      mountain_id: mountainId,
+      week_start: viewedWeekStart,
+    };
     if (availableTime.trim()) body.available_time = availableTime.trim();
     if (constraints.trim()) body.user_constraints = constraints.trim();
 
     // Week rollover reflection runs server-side inside POST /api/plan
+    // (skipped automatically when planning a week ahead of the real one)
     const res = await fetch("/api/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -136,8 +184,7 @@ export default function PlanView({
     if (res.ok) {
       const data = await res.json();
       setPlans((prev) => [data, ...prev]);
-      setWeekIndex(0);
-      fetchReflection();
+      if (isCurrentCalendarWeek) fetchReflection();
     }
 
     setGenerating(false);
@@ -242,13 +289,15 @@ export default function PlanView({
       <div className="flex flex-col gap-4 px-1 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-forest-950">Weekly Plan</h2>
-          {plan && (
+          {plans.length > 0 && viewedWeekStart && (
             <div className="mt-1 flex items-center gap-1">
               <button
                 type="button"
                 aria-label="Previous week"
-                onClick={() => setWeekIndex((i) => Math.min(i + 1, plans.length - 1))}
-                disabled={weekIndex >= plans.length - 1}
+                onClick={() =>
+                  setViewedWeekStart((w) => (w ? addDays(w, -7) : w))
+                }
+                disabled={!canGoPrev}
                 className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-stone-400 hover:bg-forest-50 hover:text-forest-700 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400 active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
               >
                 <svg width="6" height="10" viewBox="0 0 6 10" fill="none" aria-hidden="true">
@@ -256,18 +305,15 @@ export default function PlanView({
                 </svg>
               </button>
               <p className="min-w-[86px] text-center text-xs text-stone-400">
-                {isLatestWeek ? "This week" : "Week of"}{" "}
-                {!isLatestWeek &&
-                  new Date(plan.week_start + "T00:00:00").toLocaleDateString(
-                    "en-US",
-                    { month: "short", day: "numeric" }
-                  )}
+                {isCurrentCalendarWeek ? "This week" : `Week of ${formatWeekLabel(viewedWeekStart)}`}
               </p>
               <button
                 type="button"
                 aria-label="Next week"
-                onClick={() => setWeekIndex((i) => Math.max(i - 1, 0))}
-                disabled={weekIndex <= 0}
+                onClick={() =>
+                  setViewedWeekStart((w) => (w ? addDays(w, 7) : w))
+                }
+                disabled={!canGoNext}
                 className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-stone-400 hover:bg-forest-50 hover:text-forest-700 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400 active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
               >
                 <svg width="6" height="10" viewBox="0 0 6 10" fill="none" aria-hidden="true">
@@ -278,7 +324,13 @@ export default function PlanView({
           )}
           {!plan && (
             <p className="mt-1 text-sm text-stone-500">
-              Turn your current camp into a focused route for the week.
+              {plans.length === 0
+                ? "Turn your current camp into a focused route for the week."
+                : isWeekInFuture
+                  ? "Get a head start — plan this week now."
+                  : isCurrentCalendarWeek
+                    ? "Ready to plan this week? Add your available time below."
+                    : "No plan was made for this week."}
             </p>
           )}
         </div>
@@ -353,7 +405,7 @@ export default function PlanView({
       {plan && (
         <>
           {/* Week in review — written automatically by the Reflection Agent */}
-          {reflectionIsFresh && isLatestWeek && (
+          {reflectionIsFresh && isCurrentCalendarWeek && (
             <div
               className="rounded-2xl border border-[#ECECEC] bg-[#F6F6F6] p-5"
               style={{ boxShadow: cardShadow }}
@@ -404,10 +456,12 @@ export default function PlanView({
                     !tasks.length ||
                     (tasks.length === 1 &&
                       tasks[0].task.toLowerCase().includes("rest"));
-                  const isToday = isLatestWeek && dayName === todayName;
+                  const isToday = isCurrentCalendarWeek && dayName === todayName;
                   const canCheckIn = !!day && !isRest && !day.finished;
                   const isFuture =
-                    isLatestWeek && WEEK_DAYS.indexOf(dayName) > WEEK_DAYS.indexOf(todayName);
+                    isWeekInFuture ||
+                    (isCurrentCalendarWeek &&
+                      WEEK_DAYS.indexOf(dayName) > WEEK_DAYS.indexOf(todayName));
 
                   const pill = day?.finished || (isRest && !isFuture)
                     ? { text: "✓ Day complete", cls: "bg-forest-50 text-forest-700" }

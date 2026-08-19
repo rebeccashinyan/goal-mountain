@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { DailyReviewContext } from "./MiniGuideChat";
 
 type TaskStatus = "done" | "missed";
+type SteerAction = "lighter" | "different_approach" | "regenerate" | "availability";
 
 interface Task {
   task: string;
@@ -27,6 +28,7 @@ interface PlanData {
     schedule?: DaySchedule[];
     focus_area?: string;
     difficulty_level?: string;
+    status?: "draft" | "active";
   };
   priority_recommendation: string;
   next_best_action: string;
@@ -65,6 +67,14 @@ const loadFeelOptions: { value: string; label: string }[] = [
   { value: "about_right", label: "About right" },
   { value: "heavier", label: "Heavier than planned" },
 ];
+
+const availabilityPresets = ["Less time this week", "About the same", "More time this week"];
+
+const quickActionClasses =
+  "inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border border-forest-200 bg-white text-forest-800 hover:bg-forest-50 hover:border-forest-300 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200";
+
+const taskIconButtonClasses =
+  "flex h-5 w-5 items-center justify-center rounded-md text-stone-400 hover:bg-forest-50 hover:text-forest-700 active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200";
 
 // Formats using local calendar fields — avoids the UTC-conversion day-shift
 // that toISOString() causes in timezones ahead of UTC.
@@ -118,6 +128,22 @@ export default function PlanView({
   const [openPicker, setOpenPicker] = useState<string | null>(null);
   const [openDayMenu, setOpenDayMenu] = useState<string | null>(null);
 
+  // Quick-action steering (one-click plan reactions above the schedule)
+  const [steering, setSteering] = useState<SteerAction | null>(null);
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [availabilityInput, setAvailabilityInput] = useState("");
+
+  // Per-task Edit / Replace / Skip
+  const [editingTask, setEditingTask] = useState<{ day: string; index: number } | null>(null);
+  const [editDraft, setEditDraft] = useState({ task: "", duration: "" });
+  const [replacingTask, setReplacingTask] = useState<{ day: string; index: number } | null>(null);
+  const [alternatives, setAlternatives] = useState<{ task: string; duration: string; priority: string }[]>([]);
+  const [altLoading, setAltLoading] = useState(false);
+
+  // One-step undo for AI steering + skip/replace actions
+  const [undoToast, setUndoToast] = useState<{ message: string; previousPlan: PlanData } | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
   const todayWeekStart = mondayOf(new Date());
 
@@ -126,6 +152,8 @@ export default function PlanView({
     : null;
   const isCurrentCalendarWeek = viewedWeekStart === todayWeekStart;
   const isWeekInFuture = !!viewedWeekStart && viewedWeekStart > todayWeekStart;
+  const isDraft = plan?.plan.status === "draft";
+  const hasOpenDay = plan?.plan.schedule?.some((d) => !d.finished) ?? false;
 
   const weekStarts = plans.map((p) => p.week_start);
   const minWeekStart = weekStarts.length
@@ -161,6 +189,12 @@ export default function PlanView({
     fetchPlan();
     fetchReflection();
   }, [fetchPlan, fetchReflection, refreshKey]);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    };
+  }, []);
 
   async function generatePlan() {
     if (generating || !viewedWeekStart) return;
@@ -199,13 +233,173 @@ export default function PlanView({
     onPlanTalk?.(summary);
   }
 
-  function updatePlanJson(updated: PlanData) {
+  // opts.persistPriority also writes priority_recommendation — needed when
+  // restoring a full pre-action snapshot (undo), since steering can change
+  // that text alongside the schedule.
+  function updatePlanJson(updated: PlanData, opts?: { persistPriority?: boolean }) {
     setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    const body: Record<string, unknown> = { plan_id: updated.id, plan: updated.plan };
+    if (opts?.persistPriority) body.priority_recommendation = updated.priority_recommendation;
     fetch("/api/plan", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan_id: updated.id, plan: updated.plan }),
+      body: JSON.stringify(body),
     });
+  }
+
+  function showUndoToast(message: string, previousPlan: PlanData) {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoToast({ message, previousPlan });
+    undoTimerRef.current = setTimeout(() => setUndoToast(null), 8000);
+  }
+
+  function undoLastChange() {
+    if (!undoToast) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    updatePlanJson(undoToast.previousPlan, { persistPriority: true });
+    setUndoToast(null);
+  }
+
+  // One-click plan steering — revises only the not-yet-finished days,
+  // no chat round-trip. Logged/finished days are never touched.
+  async function runSteerAction(action: SteerAction, availableTimeOverride?: string) {
+    if (!plan || steering) return;
+    const previousPlan = plan;
+    setSteering(action);
+
+    try {
+      const body: Record<string, unknown> = { plan_id: plan.id, mountain_id: mountainId, action };
+      if (availableTimeOverride) body.available_time = availableTimeOverride;
+
+      const res = await fetch("/api/plan/steer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const { note, ...updated } = data;
+        setPlans((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
+        showUndoToast(note || "Plan updated", previousPlan);
+      }
+    } finally {
+      setSteering(null);
+      setAvailabilityOpen(false);
+      setAvailabilityInput("");
+    }
+  }
+
+  function startPlan() {
+    if (!plan) return;
+    updatePlanJson({ ...plan, plan: { ...plan.plan, status: undefined } });
+  }
+
+  function startEditTask(dayName: string, index: number, task: Task) {
+    setReplacingTask(null);
+    setEditingTask({ day: dayName, index });
+    setEditDraft({ task: task.task, duration: task.duration });
+  }
+
+  function commitEditTask() {
+    if (!editingTask || !plan?.plan.schedule) return;
+    const { day, index } = editingTask;
+    const schedule = plan.plan.schedule.map((d) => {
+      if (d.day !== day) return d;
+      const tasks = d.tasks.map((t, i) =>
+        i === index
+          ? { ...t, task: editDraft.task.trim() || t.task, duration: editDraft.duration.trim() || t.duration }
+          : t
+      );
+      return { ...d, tasks };
+    });
+    updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
+    setEditingTask(null);
+  }
+
+  function addTask(dayName: string) {
+    if (!plan?.plan.schedule) return;
+    const schedule = plan.plan.schedule.map((d) =>
+      d.day === dayName ? { ...d, tasks: [...d.tasks, { task: "", duration: "30 min", priority: "medium" }] } : d
+    );
+    const newIndex = (schedule.find((d) => d.day === dayName)?.tasks.length ?? 1) - 1;
+    updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
+    setReplacingTask(null);
+    setEditingTask({ day: dayName, index: newIndex });
+    setEditDraft({ task: "", duration: "30 min" });
+  }
+
+  function skipTask(dayName: string, index: number) {
+    if (!plan?.plan.schedule) return;
+    const previousPlan = plan;
+    const schedule = plan.plan.schedule.map((d) =>
+      d.day === dayName ? { ...d, tasks: d.tasks.filter((_, i) => i !== index) } : d
+    );
+    updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
+    showUndoToast("Task removed", previousPlan);
+    setOpenPicker(null);
+    setEditingTask(null);
+  }
+
+  async function openReplace(dayName: string, index: number, task: Task) {
+    setEditingTask(null);
+    setReplacingTask({ day: dayName, index });
+    setAlternatives([]);
+    setAltLoading(true);
+    try {
+      const res = await fetch("/api/plan/replace-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mountain_id: mountainId,
+          task: { task: task.task, duration: task.duration, priority: task.priority },
+          mode: "initial",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAlternatives(data.alternatives || []);
+      }
+    } finally {
+      setAltLoading(false);
+    }
+  }
+
+  async function loadMoreAlternative(task: Task) {
+    if (altLoading) return;
+    setAltLoading(true);
+    try {
+      const res = await fetch("/api/plan/replace-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mountain_id: mountainId,
+          task: { task: task.task, duration: task.duration, priority: task.priority },
+          mode: "more",
+          exclude: [task.task, ...alternatives.map((a) => a.task)],
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAlternatives((prev) => [...prev, ...(data.alternatives || [])]);
+      }
+    } finally {
+      setAltLoading(false);
+    }
+  }
+
+  function applyAlternative(dayName: string, index: number, alt: { task: string; duration: string; priority: string }) {
+    if (!plan?.plan.schedule) return;
+    const previousPlan = plan;
+    const schedule = plan.plan.schedule.map((d) => {
+      if (d.day !== dayName) return d;
+      const tasks = d.tasks.map((t, i) => (i === index ? { task: alt.task, duration: alt.duration, priority: alt.priority } : t));
+      return { ...d, tasks };
+    });
+    updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
+    showUndoToast("Task updated", previousPlan);
+    setReplacingTask(null);
+    setAlternatives([]);
   }
 
   function setTaskStatus(dayName: string, taskIndex: number, status: TaskStatus | undefined) {
@@ -288,7 +482,14 @@ export default function PlanView({
       {/* Header */}
       <div className="flex flex-col gap-4 px-1 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-forest-950">Weekly Plan</h2>
+          <h2 className="text-2xl font-bold text-forest-950">
+            {isDraft ? "Your first week" : "Weekly Plan"}
+            {isDraft && (
+              <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-widest text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
+                Draft
+              </span>
+            )}
+          </h2>
           {plans.length > 0 && viewedWeekStart && (
             <div className="mt-1 flex items-center gap-1">
               <button
@@ -333,33 +534,33 @@ export default function PlanView({
                     : "No plan was made for this week."}
             </p>
           )}
-        </div>
-        <button
-          onClick={() => (plan ? startPlanTalk() : generatePlan())}
-          disabled={generating}
-          className="text-sm px-4 py-2 rounded-xl bg-white text-forest-800 font-semibold border border-forest-200 hover:bg-forest-50 hover:border-forest-300 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
-          style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
-          type="button"
-        >
-          {generating ? (
-            <span className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 border-2 border-stone-300 border-t-forest-600 rounded-full animate-spin" />
-              Planning...
-            </span>
-          ) : plan ? (
-            <span className="flex items-center gap-2">
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <path d="M7 1.5L8.5 5.5L12.5 7L8.5 8.5L7 12.5L5.5 8.5L1.5 7L5.5 5.5L7 1.5Z" fill="currentColor" />
-              </svg>
-              Discuss plan with AI
-            </span>
-          ) : (
-            "Generate Plan"
+          {isDraft && (
+            <p className="mt-1 text-sm text-stone-500">
+              I made a starting plan based on your goal. Adjust anything before you begin.
+            </p>
           )}
-        </button>
+        </div>
+        {!plan && (
+          <button
+            onClick={generatePlan}
+            disabled={generating}
+            className="text-sm px-4 py-2 rounded-xl bg-white text-forest-800 font-semibold border border-forest-200 hover:bg-forest-50 hover:border-forest-300 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+            style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}
+            type="button"
+          >
+            {generating ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-stone-300 border-t-forest-600 rounded-full animate-spin" />
+                Planning...
+              </span>
+            ) : (
+              "Generate Plan"
+            )}
+          </button>
+        )}
       </div>
 
-      {/* Form — only for the very first plan; changes go through the guide chat */}
+      {/* Form — only for the very first plan; changes go through quick actions or the guide chat */}
       {!plan && !generating && (
         <div
           className="rounded-3xl border border-[#ECECEC] bg-white p-5 space-y-3"
@@ -428,6 +629,122 @@ export default function PlanView({
             </div>
           )}
 
+          {/* Quick-action steering — one-click reactions to the plan, no chat required */}
+          {hasOpenDay && (
+            <div
+              className="rounded-2xl border border-[#ECECEC] bg-white p-4"
+              style={{ boxShadow: cardShadow }}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!!steering}
+                  onClick={() => runSteerAction("lighter")}
+                  className={quickActionClasses}
+                >
+                  {steering === "lighter" ? (
+                    <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                  ) : (
+                    "🪶"
+                  )}
+                  Make it lighter
+                </button>
+                <button
+                  type="button"
+                  disabled={!!steering}
+                  onClick={() => runSteerAction("different_approach")}
+                  className={quickActionClasses}
+                >
+                  {steering === "different_approach" && (
+                    <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                  )}
+                  Different approach
+                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    disabled={!!steering}
+                    onClick={() => setAvailabilityOpen((v) => !v)}
+                    aria-haspopup="dialog"
+                    aria-expanded={availabilityOpen}
+                    className={quickActionClasses}
+                  >
+                    {steering === "availability" && (
+                      <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                    )}
+                    Change my availability
+                  </button>
+                  {availabilityOpen && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Close"
+                        className="fixed inset-0 z-10 cursor-default"
+                        onClick={() => setAvailabilityOpen(false)}
+                      />
+                      <div
+                        role="dialog"
+                        className="absolute left-0 top-full z-20 mt-2 w-64 rounded-xl border border-[#ECECEC] bg-white p-3 space-y-2"
+                        style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                      >
+                        <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                          Rest of this week...
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {availabilityPresets.map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => runSteerAction("availability", preset)}
+                              className="text-[11px] font-medium px-2 py-1 rounded-lg border border-stone-200 text-stone-600 hover:border-forest-300 hover:bg-forest-50 hover:text-forest-800 active:scale-[0.97] transition-colors duration-200"
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-1.5 pt-1">
+                          <input
+                            type="text"
+                            value={availabilityInput}
+                            onChange={(e) => setAvailabilityInput(e.target.value)}
+                            placeholder="e.g. 3 hours"
+                            className="flex-1 text-xs bg-white rounded-lg px-2.5 py-1.5 border border-[#ECECEC] focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200"
+                          />
+                          <button
+                            type="button"
+                            disabled={!availabilityInput.trim()}
+                            onClick={() => runSteerAction("availability", availabilityInput.trim())}
+                            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-forest-700 text-white hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] transition-colors duration-200"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={!!steering}
+                  onClick={() => runSteerAction("regenerate")}
+                  className={quickActionClasses}
+                >
+                  {steering === "regenerate" && (
+                    <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                  )}
+                  Regenerate
+                </button>
+                <button
+                  type="button"
+                  onClick={startPlanTalk}
+                  className="ml-auto text-xs text-stone-400 hover:text-forest-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                >
+                  Something more specific? <span className="underline underline-offset-2">Discuss with AI</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Priority */}
           <div
             className="rounded-2xl border border-[#ECECEC] bg-white p-5"
@@ -457,7 +774,8 @@ export default function PlanView({
                     (tasks.length === 1 &&
                       tasks[0].task.toLowerCase().includes("rest"));
                   const isToday = isCurrentCalendarWeek && dayName === todayName;
-                  const canCheckIn = !!day && !isRest && !day.finished;
+                  const canCheckIn = !!day && !isRest && !day.finished && !isDraft;
+                  const canEditTasks = !!day && !isRest && !day.finished;
                   const isFuture =
                     isWeekInFuture ||
                     (isCurrentCalendarWeek &&
@@ -493,150 +811,292 @@ export default function PlanView({
                           </span>
                         )}
                       </div>
-                      <div className="mb-2.5 flex justify-center">
-                        {day?.finished && !isRest ? (
-                          <div className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setOpenDayMenu(openDayMenu === dayName ? null : dayName)}
-                              aria-haspopup="menu"
-                              aria-expanded={openDayMenu === dayName}
-                              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold hover:ring-1 hover:ring-forest-300 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200 ${pill.cls}`}
-                            >
-                              {pill.text} ▾
-                            </button>
-                            {openDayMenu === dayName && (
-                              <>
-                                <button
-                                  type="button"
-                                  aria-label="Close menu"
-                                  className="fixed inset-0 z-10 cursor-default"
-                                  onClick={() => setOpenDayMenu(null)}
-                                />
-                                <div
-                                  role="menu"
-                                  className="absolute left-1/2 top-full z-20 mt-1 w-32 -translate-x-1/2 overflow-hidden rounded-xl border border-[#ECECEC] bg-white"
-                                  style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
-                                >
+                      {!isDraft && (
+                        <div className="mb-2.5 flex justify-center">
+                          {day?.finished && !isRest ? (
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setOpenDayMenu(openDayMenu === dayName ? null : dayName)}
+                                aria-haspopup="menu"
+                                aria-expanded={openDayMenu === dayName}
+                                className={`rounded-full px-2.5 py-1 text-[10px] font-semibold hover:ring-1 hover:ring-forest-300 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200 ${pill.cls}`}
+                              >
+                                {pill.text} ▾
+                              </button>
+                              {openDayMenu === dayName && (
+                                <>
                                   <button
                                     type="button"
-                                    role="menuitem"
+                                    aria-label="Close menu"
+                                    className="fixed inset-0 z-10 cursor-default"
                                     onClick={() => setOpenDayMenu(null)}
-                                    className="block w-full border-b border-[#ECECEC] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 bg-forest-50/60 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                  />
+                                  <div
+                                    role="menu"
+                                    className="absolute left-1/2 top-full z-20 mt-1 w-32 -translate-x-1/2 overflow-hidden rounded-xl border border-[#ECECEC] bg-white"
+                                    style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
                                   >
-                                    ✓ Day complete
-                                  </button>
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={() => reopenDay(dayName)}
-                                    className="block w-full px-3 py-2 text-left text-[11px] font-medium text-stone-500 hover:bg-stone-50 hover:text-stone-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
-                                  >
-                                    ↺ Relog day
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${pill.cls}`}>
-                            {pill.text}
-                          </span>
-                        )}
-                      </div>
-                      {!isRest ? (
-                        <div className="space-y-2">
-                          {tasks.map((task, i) => (
-                            <div
-                              key={i}
-                              className="rounded-xl border border-[#ECECEC] bg-white p-2.5"
-                            >
-                              <p className="text-xs font-medium leading-relaxed text-stone-700">
-                                <span
-                                  className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle ${priorityDot[task.priority] || "bg-stone-300"}`}
-                                />
-                                {task.task}
-                              </p>
-                              <div className="mt-2 flex items-center justify-between gap-2">
-                                {day?.finished ? (
-                                  task.status ? (
-                                    <span
-                                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${task.status === "done" ? "bg-forest-50 text-forest-700" : "bg-red-50 text-summit"}`}
-                                    >
-                                      {task.status === "done" ? "✓ Done" : "✗ Missed"}
-                                    </span>
-                                  ) : (
-                                    <span />
-                                  )
-                                ) : (
-                                  <div className="relative w-fit">
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        setOpenPicker(openPicker === `${dayName}-${i}` ? null : `${dayName}-${i}`)
-                                      }
-                                      aria-haspopup="menu"
-                                      aria-expanded={openPicker === `${dayName}-${i}`}
-                                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition-colors duration-200 active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 ${
-                                        task.status === "done"
-                                          ? "bg-forest-50 border-forest-200 text-forest-700 hover:border-forest-300"
-                                          : task.status === "missed"
-                                            ? "bg-red-50 border-red-200 text-summit hover:border-red-300"
-                                            : "border-stone-200 text-stone-400 hover:border-forest-300 hover:text-forest-700"
-                                      }`}
+                                      role="menuitem"
+                                      onClick={() => setOpenDayMenu(null)}
+                                      className="block w-full border-b border-[#ECECEC] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 bg-forest-50/60 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
                                     >
-                                      {task.status === "done" ? "✓ Done" : task.status === "missed" ? "✗ Missed" : "Status"} ▾
+                                      ✓ Day complete
                                     </button>
-                                    {openPicker === `${dayName}-${i}` && (
-                                      <>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => reopenDay(dayName)}
+                                      className="block w-full px-3 py-2 text-left text-[11px] font-medium text-stone-500 hover:bg-stone-50 hover:text-stone-700 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                    >
+                                      ↺ Relog day
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${pill.cls}`}>
+                              {pill.text}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {!isRest ? (
+                        <div className="space-y-2">
+                          {tasks.map((task, i) => {
+                            const isEditingThis = editingTask?.day === dayName && editingTask.index === i;
+                            const isReplacingThis = replacingTask?.day === dayName && replacingTask.index === i;
+
+                            return (
+                              <div key={i}>
+                                <div className="group relative rounded-xl border border-[#ECECEC] bg-white p-2.5">
+                                  {canEditTasks && !isEditingThis && (
+                                    <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
+                                      <button
+                                        type="button"
+                                        title="Edit"
+                                        aria-label="Edit task"
+                                        onClick={() => startEditTask(dayName, i, task)}
+                                        className={taskIconButtonClasses}
+                                      >
+                                        <span className="text-[10px]">✎</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Replace"
+                                        aria-label="Replace task"
+                                        onClick={() => openReplace(dayName, i, task)}
+                                        className={taskIconButtonClasses}
+                                      >
+                                        <span className="text-[10px]">↻</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Skip"
+                                        aria-label="Skip task"
+                                        onClick={() => skipTask(dayName, i)}
+                                        className={`${taskIconButtonClasses} hover:bg-red-50 hover:text-summit`}
+                                      >
+                                        <span className="text-[10px]">✕</span>
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {isEditingThis ? (
+                                    <div className="space-y-1.5">
+                                      <input
+                                        type="text"
+                                        autoFocus
+                                        value={editDraft.task}
+                                        onChange={(e) => setEditDraft((d) => ({ ...d, task: e.target.value }))}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") commitEditTask();
+                                          if (e.key === "Escape") setEditingTask(null);
+                                        }}
+                                        placeholder="Task"
+                                        className="w-full text-xs font-medium text-stone-700 bg-[#F6F6F6] rounded-lg px-2 py-1.5 border border-forest-200 focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200"
+                                      />
+                                      <div className="flex items-center gap-1.5">
+                                        <input
+                                          type="text"
+                                          value={editDraft.duration}
+                                          onChange={(e) => setEditDraft((d) => ({ ...d, duration: e.target.value }))}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") commitEditTask();
+                                            if (e.key === "Escape") setEditingTask(null);
+                                          }}
+                                          placeholder="Duration"
+                                          className="w-20 text-[10px] text-stone-500 bg-[#F6F6F6] rounded-lg px-2 py-1 border border-[#ECECEC] focus:outline-none focus:border-forest-400 transition-colors duration-200"
+                                        />
                                         <button
                                           type="button"
-                                          aria-label="Close menu"
-                                          className="fixed inset-0 z-10 cursor-default"
-                                          onClick={() => setOpenPicker(null)}
-                                        />
-                                        <div
-                                          role="menu"
-                                          className="absolute left-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-xl border border-[#ECECEC] bg-white"
-                                          style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                                          onClick={commitEditTask}
+                                          className="text-[10px] font-semibold px-2 py-1 rounded-md bg-forest-700 text-white hover:bg-forest-600 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
                                         >
-                                          <button
-                                            type="button"
-                                            role="menuitem"
-                                            onClick={() => setTaskStatus(dayName, i, "done")}
-                                            className="block w-full border-b border-[#ECECEC] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
-                                          >
-                                            ✓ Done
-                                          </button>
-                                          <button
-                                            type="button"
-                                            role="menuitem"
-                                            onClick={() => setTaskStatus(dayName, i, "missed")}
-                                            className="block w-full px-3 py-2 text-left text-[11px] font-semibold text-summit hover:bg-red-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
-                                          >
-                                            ✗ Missed
-                                          </button>
-                                          {task.status && (
+                                          Save
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingTask(null)}
+                                          className="text-[10px] font-medium text-stone-400 hover:text-stone-600 transition-colors duration-200"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <p className="text-xs font-medium leading-relaxed text-stone-700 pr-14">
+                                        <span
+                                          className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle ${priorityDot[task.priority] || "bg-stone-300"}`}
+                                        />
+                                        {task.task}
+                                      </p>
+                                      <div className="mt-2 flex items-center justify-between gap-2">
+                                        {day?.finished ? (
+                                          task.status ? (
+                                            <span
+                                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${task.status === "done" ? "bg-forest-50 text-forest-700" : "bg-red-50 text-summit"}`}
+                                            >
+                                              {task.status === "done" ? "✓ Done" : "✗ Missed"}
+                                            </span>
+                                          ) : (
+                                            <span />
+                                          )
+                                        ) : canCheckIn ? (
+                                          <div className="relative w-fit">
                                             <button
                                               type="button"
-                                              role="menuitem"
-                                              onClick={() => setTaskStatus(dayName, i, undefined)}
-                                              className="block w-full border-t border-[#ECECEC] px-3 py-2 text-left text-[11px] font-medium text-stone-400 hover:bg-stone-50 hover:text-stone-600 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                              onClick={() =>
+                                                setOpenPicker(openPicker === `${dayName}-${i}` ? null : `${dayName}-${i}`)
+                                              }
+                                              aria-haspopup="menu"
+                                              aria-expanded={openPicker === `${dayName}-${i}`}
+                                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition-colors duration-200 active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 ${
+                                                task.status === "done"
+                                                  ? "bg-forest-50 border-forest-200 text-forest-700 hover:border-forest-300"
+                                                  : task.status === "missed"
+                                                    ? "bg-red-50 border-red-200 text-summit hover:border-red-300"
+                                                    : "border-stone-200 text-stone-400 hover:border-forest-300 hover:text-forest-700"
+                                              }`}
                                             >
-                                              ↺ Clear
+                                              {task.status === "done" ? "✓ Done" : task.status === "missed" ? "✗ Missed" : "Status"} ▾
                                             </button>
-                                          )}
-                                        </div>
-                                      </>
+                                            {openPicker === `${dayName}-${i}` && (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  aria-label="Close menu"
+                                                  className="fixed inset-0 z-10 cursor-default"
+                                                  onClick={() => setOpenPicker(null)}
+                                                />
+                                                <div
+                                                  role="menu"
+                                                  className="absolute left-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-xl border border-[#ECECEC] bg-white"
+                                                  style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                                                >
+                                                  <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    onClick={() => setTaskStatus(dayName, i, "done")}
+                                                    className="block w-full border-b border-[#ECECEC] px-3 py-2 text-left text-[11px] font-semibold text-forest-700 hover:bg-forest-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                                  >
+                                                    ✓ Done
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    onClick={() => setTaskStatus(dayName, i, "missed")}
+                                                    className="block w-full px-3 py-2 text-left text-[11px] font-semibold text-summit hover:bg-red-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                                  >
+                                                    ✗ Missed
+                                                  </button>
+                                                  {task.status && (
+                                                    <button
+                                                      type="button"
+                                                      role="menuitem"
+                                                      onClick={() => setTaskStatus(dayName, i, undefined)}
+                                                      className="block w-full border-t border-[#ECECEC] px-3 py-2 text-left text-[11px] font-medium text-stone-400 hover:bg-stone-50 hover:text-stone-600 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                                                    >
+                                                      ↺ Clear
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span />
+                                        )}
+                                        <p className="shrink-0 text-[10px] text-stone-400">
+                                          {task.duration}
+                                        </p>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+
+                                {isReplacingThis && (
+                                  <div className="mt-1.5 rounded-xl border border-forest-200 bg-forest-50/60 p-2 space-y-1.5">
+                                    <p className="text-[10px] font-semibold text-forest-700 uppercase tracking-wide">
+                                      Swap this for...
+                                    </p>
+                                    {altLoading && alternatives.length === 0 ? (
+                                      <div className="flex items-center gap-1.5 py-1">
+                                        <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                                        <span className="text-[10px] text-stone-400">Thinking...</span>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1">
+                                        {alternatives.map((alt, ai) => (
+                                          <button
+                                            key={ai}
+                                            type="button"
+                                            onClick={() => applyAlternative(dayName, i, alt)}
+                                            className="block w-full text-left text-[11px] font-medium text-stone-700 bg-white rounded-lg px-2 py-1.5 border border-[#ECECEC] hover:border-forest-300 hover:bg-forest-50 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                                          >
+                                            {alt.task} <span className="text-stone-400">({alt.duration})</span>
+                                          </button>
+                                        ))}
+                                      </div>
                                     )}
+                                    <div className="flex items-center gap-2 pt-0.5">
+                                      <button
+                                        type="button"
+                                        disabled={altLoading}
+                                        onClick={() => loadMoreAlternative(task)}
+                                        className="text-[10px] font-semibold text-forest-700 hover:underline disabled:opacity-40 transition-colors duration-200"
+                                      >
+                                        {altLoading && alternatives.length > 0 ? "Thinking..." : "Something else"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReplacingTask(null);
+                                          setAlternatives([]);
+                                        }}
+                                        className="text-[10px] font-medium text-stone-400 hover:text-stone-600 transition-colors duration-200"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
                                   </div>
                                 )}
-                                <p className="shrink-0 text-[10px] text-stone-400">
-                                  {task.duration}
-                                </p>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
+                          {canEditTasks && (
+                            <button
+                              type="button"
+                              onClick={() => addTask(dayName)}
+                              className="w-full text-[10px] font-semibold text-stone-400 hover:text-forest-700 border border-dashed border-stone-200 hover:border-forest-300 rounded-lg py-1.5 transition-colors duration-200"
+                            >
+                              + Add task
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="rounded-xl border border-[#ECECEC] bg-[#F6F6F6] px-2 py-2.5 text-center text-[11px] text-stone-400">
@@ -644,7 +1104,7 @@ export default function PlanView({
                         </div>
                       )}
 
-                      {/* Day footer: finish flow */}
+                      {/* Day footer: finish flow (not shown while the plan is still a draft) */}
                       {canCheckIn && !isToday && !isFuture && (
                         <button
                           type="button"
@@ -697,6 +1157,23 @@ export default function PlanView({
             </div>
           )}
 
+          {/* Start this plan — commits the draft, turning on day-tracking */}
+          {isDraft && (
+            <div className="flex flex-col sm:flex-row items-center gap-3 rounded-2xl border border-forest-200 bg-forest-50 p-4">
+              <p className="flex-1 text-sm text-forest-800">
+                Ready when you are — starting locks today in as day one.
+              </p>
+              <button
+                type="button"
+                onClick={startPlan}
+                className="w-full sm:w-auto text-sm px-5 py-2.5 rounded-xl bg-forest-700 text-white font-semibold hover:bg-forest-600 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                style={{ boxShadow: "0 2px 8px rgba(20,60,35,0.2)" }}
+              >
+                Start this plan →
+              </button>
+            </div>
+          )}
+
           {/* Adjustments */}
           {plan.adjustments && plan.adjustments.length > 0 && (
             <div
@@ -719,6 +1196,22 @@ export default function PlanView({
             </div>
           )}
         </>
+      )}
+
+      {undoToast && (
+        <div
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-xl bg-forest-950 text-white px-4 py-3 text-sm"
+          style={{ boxShadow: "0 12px 32px rgba(20,60,35,0.28), 0 2px 8px rgba(20,60,35,0.16)" }}
+        >
+          <span>{undoToast.message}</span>
+          <button
+            type="button"
+            onClick={undoLastChange}
+            className="font-semibold text-forest-200 hover:text-white underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white transition-colors duration-200"
+          >
+            Undo
+          </button>
+        </div>
       )}
     </section>
   );

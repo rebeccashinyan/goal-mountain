@@ -148,12 +148,21 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
 
   const result = JSON.parse(content);
 
+  // The mountain's very first plan is shown as an editable draft the user
+  // must explicitly start, rather than a live/tracked schedule — every
+  // plan after that goes straight to active, since by then the user has
+  // already been through onboarding once.
+  const planToSave = { ...(result.plan || {}) };
+  if (!pastPlans?.length) {
+    planToSave.status = "draft";
+  }
+
   const { data, error } = await supabase
     .from("weekly_plans")
     .insert({
       mountain_id,
       week_start: weekStart,
-      plan: result.plan || {},
+      plan: planToSave,
       priority_recommendation: result.priority_recommendation || "",
       next_best_action: result.next_best_action || "",
       strategy_notes: result.strategy_notes || "",
@@ -168,10 +177,12 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
   return Response.json({ ...data, adjustments: result.adjustments || [] });
 }
 
-// Update a plan's JSON in place — used by the daily check-in to persist
-// per-task done/missed statuses, day finished flags, and load feedback
+// Update a plan in place — used by the daily check-in to persist per-task
+// done/missed statuses, day finished flags, and load feedback, and by the
+// quick-action steering + undo flow to persist revised schedules (and,
+// when a steering action changes it, the priority recommendation text).
 export async function PATCH(request: Request) {
-  const { plan_id, plan } = await request.json();
+  const { plan_id, plan, priority_recommendation } = await request.json();
 
   if (!plan_id || !plan) {
     return Response.json(
@@ -180,9 +191,14 @@ export async function PATCH(request: Request) {
     );
   }
 
+  const updates: Record<string, unknown> = { plan };
+  if (priority_recommendation !== undefined) {
+    updates.priority_recommendation = priority_recommendation;
+  }
+
   const { data, error } = await supabase
     .from("weekly_plans")
-    .update({ plan })
+    .update(updates)
     .eq("id", plan_id)
     .select()
     .single();

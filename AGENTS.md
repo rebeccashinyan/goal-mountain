@@ -209,7 +209,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 ## 4. Planning + Strategy Agent
 
-**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`
+**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `POST /api/plan/steer`, `POST /api/plan/replace-task`
 
 **Purpose:** Generates an adaptive weekly schedule. Accounts for past performance, user constraints, and behavioral patterns from memory.
 
@@ -240,15 +240,53 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 **DB reads:** `mountains`, `weekly_plans` (last 3 for learning), `progress_logs` (last 10), `memory` (motivation, obstacle, behavior_pattern)  
 **DB writes:** `weekly_plans`
 
+**Draft state:** the mountain's very first plan is saved with `plan.status: "draft"` (the route checks `pastPlans` — already fetched for the learning step above — and stamps draft only when it's empty). Every plan generated after that is active immediately. The frontend (`PlanView`) treats a draft plan as a proposal: no status tracking or check-in controls render until the user explicitly commits it (see UI_SPEC.md → `PlanView` → First-plan draft state). Committing is just a `PATCH` that clears `plan.status`.
+
 **GET:** `GET /api/plan?mountain_id=uuid` — returns all plans ordered by date descending.
 
-**PATCH:** `PATCH /api/plan` with `{ plan_id, plan }` — overwrites a plan's `plan` jsonb. Used by the daily check-in UI to persist per-task `status: "done"|"missed"`, per-day `finished: true`, and `load_feel: "lighter"|"about_right"|"heavier"`.
+**PATCH:** `PATCH /api/plan` with `{ plan_id, plan, priority_recommendation? }` — overwrites a plan's `plan` jsonb, and optionally its `priority_recommendation` text column. Used by: the daily check-in UI (per-task `status: "done"|"missed"`, per-day `finished: true`, `load_feel`), inline task Edit/Add/Skip/Replace, committing a draft (clears `plan.status`), and the one-step undo toast (restores a full pre-action snapshot, including `priority_recommendation` since steering can change it).
 
-**Daily check-in flow (frontend `PlanView`):**
+**Daily check-in flow (frontend `PlanView`, active weeks only):**
 1. User labels each task with ✓ Done / ✗ Missed chips (persisted via PATCH on every tap)
 2. "Finish today" on today's card → one-tap load-feel question (skippable)
 3. Unlabeled tasks become missed, day locks (`finished: true`), one log written via Progress Tracking Agent (`data.source: "daily_checkin"`, with `completed`, `missed`, `load_feel`)
 4. All done (and load not "heavier") → "Day complete" celebration, no conversation. Tasks missed OR load felt heavier → the `MiniGuideChat` panel opens on the overview page itself: a "Daily check-in — {day}" `guide_chats` row is created and the guide asks what got in the way (or, on a clean-but-heavy day, one light "which task ran long?" question), stores reasons as memories, and can propose a plan adjustment. The panel's expand icon opens the same conversation in the full AI Guide (`/guide?mountain_id=…&chat_id=…`).
+
+**Quick-action steering — `POST /api/plan/steer`:** one-click plan reactions, no chat round-trip. Sits above the schedule on both draft and active weeks (whenever the viewed week has an unfinished day).
+
+**Input:**
+```json
+{
+  "plan_id": "uuid",
+  "mountain_id": "uuid",
+  "action": "lighter | different_approach | regenerate | availability",
+  "available_time": "optional — only meaningful for action: \"availability\""
+}
+```
+
+**Behavior:** loads the plan and mountain, splits the schedule into finished (locked, untouched) and open days, and asks the model to revise only the open days per the action's instruction (lighten the load / restructure around a different strategy / throw out and regenerate / re-fit the new available time). Merges the revised open days back with the untouched finished days and updates the row in place.
+
+**Output:** the full updated `weekly_plans` row (same shape as `POST /api/plan`) plus `note` — a one-sentence, user-facing summary of what changed, shown in the undo toast.
+
+**DB reads:** `weekly_plans` (the plan being steered), `mountains`  
+**DB writes:** `weekly_plans` (`plan.schedule`/`plan.focus_area`, `priority_recommendation`)
+
+**Inline task replacement — `POST /api/plan/replace-task`:** per-task direct manipulation (the ↻ Replace icon), no chat round-trip.
+
+**Input:**
+```json
+{
+  "mountain_id": "uuid",
+  "task": { "task": "...", "duration": "...", "priority": "high|medium|low" },
+  "mode": "initial | more",
+  "exclude": ["optional — task strings already shown, so \"more\" doesn't repeat them"]
+}
+```
+
+**Output:** `{ "alternatives": [{ "task": "...", "duration": "...", "priority": "..." }] }` — `mode: "initial"` returns 2 (one more hands-on, one smaller/lower-effort); `mode: "more"` (the "Something else" follow-up) returns 1 further alternative distinct from `exclude`. The frontend applies a chosen alternative via the existing `PATCH /api/plan`; this route itself is stateless (no DB write).
+
+**DB reads:** `mountains`  
+**DB writes:** none
 
 ---
 

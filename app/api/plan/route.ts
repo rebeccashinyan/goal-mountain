@@ -1,5 +1,6 @@
 import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
+import { activeHistory, effectivePlans, isActivePlan, type PlanRow } from "@/lib/plans";
 
 export async function POST(request: Request) {
   const { mountain_id, available_time, user_constraints, week_start } =
@@ -30,17 +31,35 @@ export async function POST(request: Request) {
   // happened yet, so there's nothing to reflect on.
   const isFutureWeek = weekStart > currentWeekStart;
 
-  const { data: pastPlans } = await supabase
+  // Fetch generously, then narrow to real behavioural history: superseded
+  // rows and never-started drafts are not evidence of how the user performs.
+  const { data: planRows } = await supabase
     .from("weekly_plans")
     .select("*")
     .eq("mountain_id", mountain_id)
     .order("created_at", { ascending: false })
-    .limit(3);
+    .limit(20);
+
+  const allRows = (planRows || []) as PlanRow[];
+  const pastPlans = activeHistory(allRows, 3);
+
+  // An active week is revised through /api/plan/steer (which creates a
+  // reviewable revision), never by silently stacking a fresh plan on top.
+  const existingForWeek = effectivePlans(allRows).find((p) => p.week_start === weekStart);
+  if (existingForWeek && isActivePlan(existingForWeek)) {
+    return Response.json(
+      {
+        error: "This week already has an active plan. Use /api/plan/steer to propose a revision.",
+        plan_id: existingForWeek.id,
+      },
+      { status: 409 }
+    );
+  }
 
   // Week rollover: if the previous plan hasn't been reflected on yet, run the
   // Reflection Agent first (auto mode) so this plan learns from that week.
   // Fires for every plan-generation path — form, guide chat, mini chat.
-  if (pastPlans?.length && !isFutureWeek) {
+  if (pastPlans.length && !isFutureWeek) {
     const { data: latestReflections } = await supabase
       .from("reflections")
       .select("created_at")
@@ -70,13 +89,19 @@ export async function POST(request: Request) {
     .order("created_at", { ascending: false })
     .limit(10);
 
+  // `preference` carries what the user's own plan edits have taught us
+  // (lightened weeks, hands-on swaps). Capped so accumulated signals can't
+  // crowd out the rest of the context.
   const { data: memories } = await supabase
     .from("memory")
     .select("content, category")
     .eq("mountain_id", mountain_id)
-    .in("category", ["motivation", "obstacle", "behavior_pattern"]);
+    .in("category", ["motivation", "obstacle", "behavior_pattern", "preference"])
+    .order("created_at", { ascending: false })
+    .limit(25);
 
   const currentMilestone = mountain.milestones[mountain.current_milestone_index];
+  const previousPlan = pastPlans[0];
 
   const completion = await openai.chat.completions.create({
     model: "gpt-5-mini",
@@ -110,7 +135,7 @@ Return a JSON object:
   "priority_recommendation": "the single most important thing to do this week and why",
   "next_best_action": "the very next thing the user should do right now",
   "strategy_notes": "broader strategic thinking about the user's trajectory",
-  "adjustments": ["list of adjustments made based on past performance"]
+  "what_changed": ["short phrases naming what you changed vs last week and why"]
 }
 
 Rules:
@@ -119,7 +144,11 @@ Rules:
 - If user is ahead of schedule, consider leveling up
 - Distribute effort across the week, not front-loaded
 - Rest and recovery days are strategic — include them when appropriate
-- Be specific with tasks: "Complete chapter 3 exercises" not "Study more", "Write 500 words of case study draft" not "Work on portfolio"`,
+- Be specific with tasks: "Complete chapter 3 exercises" not "Study more", "Write 500 words of case study draft" not "Work on portfolio"
+
+About "what_changed" — this is shown to the user before they commit to the week, so they can see the plan adapted to their last week rather than being regenerated at random:
+- ${previousPlan ? 'Write 2-4 SHORT phrases (under ~8 words each) naming concrete differences from last week and, where useful, the reason. Good: "Reduced 6 tasks to 4", "Shortened research sessions", "Moved portfolio work earlier", "Dropped Wednesday — missed it twice". Bad: long sentences, vague claims, or anything the data does not support.' : 'This is the user\'s FIRST week — there is no previous week to compare against. Return an empty array for what_changed.'}
+- Never invent a change you did not actually make.`,
       },
       {
         role: "user",
@@ -131,7 +160,8 @@ Target date: ${mountain.race_date || "Not set"}
 Week being planned: ${weekStart}${isFutureWeek ? " (being planned in advance, before this week starts)" : ""}
 Available time: ${available_time || "Not specified"}
 User constraints: ${user_constraints || "None"}
-${pastPlans?.length ? `\nRecent plan history: ${JSON.stringify(pastPlans.map((p: { priority_recommendation: string; strategy_notes: string }) => ({ recommendation: p.priority_recommendation, notes: p.strategy_notes })))}` : ""}
+${pastPlans.length ? `\nRecent plan history (weeks the user actually committed to and ran — never-started drafts are excluded): ${JSON.stringify(pastPlans.map((p) => ({ recommendation: p.priority_recommendation, notes: p.strategy_notes })))}` : ""}
+${previousPlan ? `\nLAST WEEK'S ACTUAL SCHEDULE with per-task done/missed statuses and daily load feedback — base "what_changed" on the difference between this and the week you are about to write: ${JSON.stringify(previousPlan.plan?.schedule || [])}` : ""}
 ${progressLogs?.length ? `\nRecent progress: ${JSON.stringify(progressLogs.map((l: { log_type: string; data: Record<string, unknown> }) => ({ type: l.log_type, data: l.data })))}` : ""}
 ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) => m.content).join("; ")}` : ""}`,
       },
@@ -148,14 +178,16 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
 
   const result = JSON.parse(content);
 
-  // The mountain's very first plan is shown as an editable draft the user
-  // must explicitly start, rather than a live/tracked schedule — every
-  // plan after that goes straight to active, since by then the user has
-  // already been through onboarding once.
-  const planToSave = { ...(result.plan || {}) };
-  if (!pastPlans?.length) {
-    planToSave.status = "draft";
-  }
+  // EVERY generated week starts as a draft — an AI proposal the user reviews
+  // and adjusts before committing. Nothing is tracked until they start it,
+  // so an untouched draft can never be misread as missed work.
+  // `what_changed` only exists from the second week onward; for the first
+  // week there's no previous week to have adapted from.
+  const planToSave = {
+    ...(result.plan || {}),
+    status: "draft",
+    what_changed: previousPlan ? result.what_changed || [] : [],
+  };
 
   const { data, error } = await supabase
     .from("weekly_plans")
@@ -174,7 +206,7 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  return Response.json({ ...data, adjustments: result.adjustments || [] });
+  return Response.json(data);
 }
 
 // Update a plan in place — used by the daily check-in to persist per-task

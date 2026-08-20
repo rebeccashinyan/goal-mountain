@@ -107,7 +107,7 @@ function MountainContent() {
       <PlanView
         mountainId={mountain.id}
         onDailyReview={setMiniChat}
-        onPlanTalk={(summary) => setMiniChat({ kind: "plan_talk", summary })}
+        onPlanTalk={(summary, planId) => setMiniChat({ kind: "plan_talk", summary, planId })}
         refreshKey={planRefreshKey}
       />
       {miniChat && (

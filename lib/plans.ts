@@ -1,0 +1,141 @@
+// Shared weekly-plan lifecycle helpers.
+//
+// A weekly_plans row is either a DRAFT (an AI proposal the user hasn't
+// committed to yet) or ACTIVE (the plan they're actually climbing). Only
+// active plans count as behavioural evidence — a draft the user never
+// started must never be read as "tasks they missed".
+//
+// Status lives in the plan jsonb (`plan.status`). Rows written before the
+// draft lifecycle existed have no status at all; those are legacy active
+// plans, so anything that isn't explicitly "draft" is treated as active.
+
+export type PlanStatus = "draft" | "active";
+
+export interface PlanTask {
+  task: string;
+  duration: string;
+  priority: string;
+  status?: "done" | "missed";
+}
+
+export interface PlanDay {
+  day: string;
+  tasks: PlanTask[];
+  finished?: boolean;
+  load_feel?: string;
+}
+
+export interface PlanJson {
+  schedule?: PlanDay[];
+  focus_area?: string;
+  difficulty_level?: string;
+  status?: PlanStatus;
+  what_changed?: string[];
+  pending_revision?: PendingRevision;
+}
+
+export interface PendingRevision {
+  schedule: PlanDay[];
+  focus_area?: string;
+  priority_recommendation?: string;
+  note: string;
+  diff: PlanDiff;
+  created_at: string;
+}
+
+export interface PlanRow {
+  id: string;
+  mountain_id: string;
+  week_start: string;
+  plan: PlanJson;
+  priority_recommendation: string;
+  next_best_action: string;
+  strategy_notes: string;
+  created_at: string;
+}
+
+export function planStatus(plan: PlanJson | null | undefined): PlanStatus {
+  return plan?.status === "draft" ? "draft" : "active";
+}
+
+export function isActivePlan(row: { plan: PlanJson }): boolean {
+  return planStatus(row.plan) === "active";
+}
+
+// The effective plan for a week is the newest row for that week_start —
+// regenerating a draft leaves the superseded rows behind.
+export function effectivePlans(rows: PlanRow[]): PlanRow[] {
+  const seen = new Set<string>();
+  const out: PlanRow[] = [];
+  for (const row of [...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))) {
+    if (seen.has(row.week_start)) continue;
+    seen.add(row.week_start);
+    out.push(row);
+  }
+  return out;
+}
+
+// Behavioural history: only weeks the user actually committed to and ran.
+export function activeHistory(rows: PlanRow[], limit?: number): PlanRow[] {
+  const active = effectivePlans(rows).filter(isActivePlan);
+  return limit ? active.slice(0, limit) : active;
+}
+
+export interface PlanDiff {
+  added: { day: string; task: string }[];
+  removed: { day: string; task: string }[];
+  moved: { task: string; from: string; to: string }[];
+  retimed: { day: string; task: string; from: string; to: string }[];
+}
+
+export function isEmptyDiff(diff: PlanDiff | undefined): boolean {
+  if (!diff) return true;
+  return !diff.added.length && !diff.removed.length && !diff.moved.length && !diff.retimed.length;
+}
+
+// Deterministic diff (never model-generated, so the review card can't
+// misreport what will actually happen). Tasks are matched by exact text.
+export function diffSchedules(before: PlanDay[], after: PlanDay[]): PlanDiff {
+  const index = (schedule: PlanDay[]) => {
+    const map = new Map<string, { day: string; duration: string }>();
+    for (const day of schedule) {
+      for (const task of day.tasks || []) {
+        if (!map.has(task.task)) map.set(task.task, { day: day.day, duration: task.duration });
+      }
+    }
+    return map;
+  };
+
+  const beforeIdx = index(before);
+  const afterIdx = index(after);
+  const diff: PlanDiff = { added: [], removed: [], moved: [], retimed: [] };
+
+  for (const [text, b] of beforeIdx) {
+    const a = afterIdx.get(text);
+    if (!a) {
+      diff.removed.push({ day: b.day, task: text });
+      continue;
+    }
+    if (a.day !== b.day) diff.moved.push({ task: text, from: b.day, to: a.day });
+    if (a.duration !== b.duration) {
+      diff.retimed.push({ day: a.day, task: text, from: b.duration, to: a.duration });
+    }
+  }
+
+  for (const [text, a] of afterIdx) {
+    if (!beforeIdx.has(text)) diff.added.push({ day: a.day, task: text });
+  }
+
+  return diff;
+}
+
+// Applies a proposed schedule without ever disturbing a day the user has
+// already logged — re-checked at apply time, since a day can be finished
+// between proposing and applying.
+export function mergeKeepingFinished(live: PlanDay[], proposed: PlanDay[]): PlanDay[] {
+  return live.map((day) => {
+    if (day.finished) return day;
+    const next = proposed.find((p) => p.day === day.day);
+    return next ? { ...day, tasks: next.tasks } : day;
+  });
+}

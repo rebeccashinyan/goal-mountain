@@ -209,9 +209,31 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 ## 4. Planning + Strategy Agent
 
-**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `POST /api/plan/steer`, `POST /api/plan/replace-task`
+**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `POST /api/plan/steer`, `POST /api/plan/revision`, `POST /api/plan/replace-task`
 
 **Purpose:** Generates an adaptive weekly schedule. Accounts for past performance, user constraints, and behavioral patterns from memory.
+
+### Plan lifecycle — draft → active
+
+Every generated week is a **draft** first: an AI proposal the user reviews and adjusts before committing. Nothing is tracked until they press "Start this week", which flips it to **active**. Draft is a property of the *plan*, not of the mountain — the second, fifth, and fiftieth week all start as drafts, not just the first.
+
+Status lives in the plan jsonb as `plan.status` (no extra column). Rows written before this lifecycle existed carry no status; those count as legacy **active** plans, so anything not explicitly `"draft"` is treated as active. `lib/plans.ts` is the single source of truth for this rule — `planStatus()`, `isActivePlan()`, `effectivePlans()`, `activeHistory()`.
+
+Two selection rules every consumer must follow:
+- **Effective plan for a week** = the *newest row for that `week_start`* (regenerating a draft leaves superseded rows behind). Never "newest row overall" — that may be a next-week draft the user hasn't accepted.
+- **Behavioural history** = effective plans filtered to active only. A draft the user never started is not evidence of anything; reading one as performance would invent missed tasks. Enforced via `activeHistory()` in the Planning, Reflection, Guide, and Proactive agents.
+
+Only an active plan can produce daily tracking, done/missed statuses, "not logged" days, progress logs, daily check-ins, or a week reflection.
+
+### Three ways a plan changes
+
+| Situation | Mechanism | Result |
+|-----------|-----------|--------|
+| Week is still a **draft** | quick-action chip / guide request → `POST /api/plan/steer` | applied immediately (undo toast) — nothing was committed yet |
+| Week is **active**, whole-week replan | quick-action chip / guide request → `POST /api/plan/steer` | stored as `plan.pending_revision`; live schedule untouched until the user resolves it via `POST /api/plan/revision` |
+| Any unfinished day, **single task** | inline Edit / Replace / Skip / Add | applied immediately (undo toast) — direct manipulation is the point; a review gate here would reintroduce the friction the inline controls remove |
+
+**Note on generation timing:** there is no scheduler in this project, so next-week drafts are not auto-generated at rollover — the user triggers generation, which (as before) runs auto-reflection first, then produces the draft. The rollover chain is preserved; only the trigger is manual.
 
 **Input:**
 ```json
@@ -233,18 +255,22 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
   "priority_recommendation": "the single most important thing this week",
   "next_best_action": "the very next thing to do right now",
   "strategy_notes": "broader strategic thinking",
-  "adjustments": ["adjustments made based on past performance"]
+  "what_changed": ["short phrases naming what changed vs last week"]
 }
 ```
 
-**DB reads:** `mountains`, `weekly_plans` (last 3 for learning), `progress_logs` (last 10), `memory` (motivation, obstacle, behavior_pattern)  
+**DB reads:** `mountains`, `weekly_plans` (last 20 rows, narrowed to the 3 most recent *active* weeks), `progress_logs` (last 10), `memory` (motivation, obstacle, behavior_pattern, **preference** — capped at 25 most recent)  
 **DB writes:** `weekly_plans`
 
-**Draft state:** the mountain's very first plan is saved with `plan.status: "draft"` (the route checks `pastPlans` — already fetched for the learning step above — and stamps draft only when it's empty). Every plan generated after that is active immediately. The frontend (`PlanView`) treats a draft plan as a proposal: no status tracking or check-in controls render until the user explicitly commits it (see UI_SPEC.md → `PlanView` → First-plan draft state). Committing is just a `PATCH` that clears `plan.status`.
+**Always saves as a draft:** `plan.status` is set to `"draft"` on every generated week, unconditionally. Committing happens in the UI via `PATCH` setting `plan.status: "active"`.
 
-**GET:** `GET /api/plan?mountain_id=uuid` — returns all plans ordered by date descending.
+**`what_changed`:** 2-4 short phrases ("Reduced 6 tasks to 4", "Shortened research sessions", "Moved portfolio work earlier"), persisted in the plan jsonb and shown on the draft before the user commits — so an adapted plan is visibly a response to last week rather than a random re-roll. The prompt receives last week's *actual* schedule including per-task done/missed statuses and load feedback, and is told to return an empty array for a first week (nothing to compare against). Replaces the old `adjustments` field, which was returned but never persisted and so vanished on reload.
 
-**PATCH:** `PATCH /api/plan` with `{ plan_id, plan, priority_recommendation? }` — overwrites a plan's `plan` jsonb, and optionally its `priority_recommendation` text column. Used by: the daily check-in UI (per-task `status: "done"|"missed"`, per-day `finished: true`, `load_feel`), inline task Edit/Add/Skip/Replace, committing a draft (clears `plan.status`), and the one-step undo toast (restores a full pre-action snapshot, including `priority_recommendation` since steering can change it).
+**409 guard:** if the target `week_start` already has an *active* effective plan, generation is rejected with `409` and the existing `plan_id`. An in-progress week is revised through `/api/plan/steer`, never by silently stacking a newer row that the "newest row wins" selection would then pick up.
+
+**GET:** `GET /api/plan?mountain_id=uuid` — returns all plans ordered by date descending. Consumers must apply the selection rules above (`effectivePlans` / `activeHistory`) rather than treating row 0 as the current plan.
+
+**PATCH:** `PATCH /api/plan` with `{ plan_id, plan, priority_recommendation? }` — overwrites a plan's `plan` jsonb, and optionally its `priority_recommendation` text column. Used by: the daily check-in UI (per-task `status: "done"|"missed"`, per-day `finished: true`, `load_feel`), inline task Edit/Add/Skip/Replace, **starting a week** (`plan.status: "active"`), and the one-step undo toast (restores a full pre-action snapshot, including `priority_recommendation` since steering can change it).
 
 **Daily check-in flow (frontend `PlanView`, active weeks only):**
 1. User labels each task with ✓ Done / ✗ Missed chips (persisted via PATCH on every tap)
@@ -252,24 +278,41 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 3. Unlabeled tasks become missed, day locks (`finished: true`), one log written via Progress Tracking Agent (`data.source: "daily_checkin"`, with `completed`, `missed`, `load_feel`)
 4. All done (and load not "heavier") → "Day complete" celebration, no conversation. Tasks missed OR load felt heavier → the `MiniGuideChat` panel opens on the overview page itself: a "Daily check-in — {day}" `guide_chats` row is created and the guide asks what got in the way (or, on a clean-but-heavy day, one light "which task ran long?" question), stores reasons as memories, and can propose a plan adjustment. The panel's expand icon opens the same conversation in the full AI Guide (`/guide?mountain_id=…&chat_id=…`).
 
-**Quick-action steering — `POST /api/plan/steer`:** one-click plan reactions, no chat round-trip. Sits above the schedule on both draft and active weeks (whenever the viewed week has an unfinished day).
+**Quick-action steering — `POST /api/plan/steer`:** one-click plan reactions, no chat round-trip. Sits above the schedule on both draft and active weeks (whenever the viewed week has an unfinished day). The guide's `propose_plan` action routes here too, so conversational replanning gets the same review semantics.
 
 **Input:**
 ```json
 {
   "plan_id": "uuid",
   "mountain_id": "uuid",
-  "action": "lighter | different_approach | regenerate | availability",
-  "available_time": "optional — only meaningful for action: \"availability\""
+  "action": "lighter | different_approach | regenerate | availability | custom",
+  "available_time": "optional — mainly for action: \"availability\"",
+  "instruction": "required for action: \"custom\" — free-form ask from the guide conversation"
 }
 ```
 
-**Behavior:** loads the plan and mountain, splits the schedule into finished (locked, untouched) and open days, and asks the model to revise only the open days per the action's instruction (lighten the load / restructure around a different strategy / throw out and regenerate / re-fit the new available time). Merges the revised open days back with the untouched finished days and updates the row in place.
+**Behavior:** loads the plan and mountain, splits the schedule into finished (locked, untouched) and open days, and asks the model to revise only the open days per the action's instruction. The prompt requires unchanged tasks to be returned with their **exact original text** — otherwise harmless rewording shows up in the diff as mass remove+add — and forbids splitting one task into several (which would *increase* load when the user asked for less).
 
-**Output:** the full updated `weekly_plans` row (same shape as `POST /api/plan`) plus `note` — a one-sentence, user-facing summary of what changed, shown in the undo toast.
+Then it branches on the plan's status:
+- **draft** → applies immediately, returns `mode: "applied"`
+- **active** → computes a diff and stores it as `plan.pending_revision`; the live schedule is untouched. Returns `mode: "revision"` with the diff.
+- no actual difference → `mode: "unchanged"`, nothing written
 
-**DB reads:** `weekly_plans` (the plan being steered), `mountains`  
-**DB writes:** `weekly_plans` (`plan.schedule`/`plan.focus_area`, `priority_recommendation`)
+**Output:** the updated `weekly_plans` row plus `mode`, `note` (one-sentence user-facing summary), and `diff` when a revision was created.
+
+**Preference learning:** every steer writes a `preference` memory naming the signal ("Asked the AI to lighten a weekly plan — may prefer a lower task load than proposed"). Repeating the same steer touches `updated_at` on the existing row rather than inserting a duplicate, so a strengthening signal doesn't flood the memory table.
+
+**DB reads:** `weekly_plans` (the plan being steered), `mountains`, `memory`  
+**DB writes:** `weekly_plans`, `memory` (preference)
+
+**Resolving a revision — `POST /api/plan/revision`:** `{ plan_id, decision: "apply" | "discard" }`. No AI call — the revision was already generated by `/steer`.
+- `discard` → drops `pending_revision`, current plan stands
+- `apply` → merges the proposed schedule into the live one and clears `pending_revision`
+
+The merge is re-computed against the plan's **current** schedule at apply time, not the snapshot taken when the revision was proposed — a day may have been finished and logged in between, and completed work (task text, `status`, `finished`, `load_feel`) must survive the revision untouched.
+
+**DB reads:** `weekly_plans`  
+**DB writes:** `weekly_plans`
 
 **Inline task replacement — `POST /api/plan/replace-task`:** per-task direct manipulation (the ↻ Replace icon), no chat round-trip.
 
@@ -285,8 +328,10 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 **Output:** `{ "alternatives": [{ "task": "...", "duration": "...", "priority": "..." }] }` — `mode: "initial"` returns 2 (one more hands-on, one smaller/lower-effort); `mode: "more"` (the "Something else" follow-up) returns 1 further alternative distinct from `exclude`. The frontend applies a chosen alternative via the existing `PATCH /api/plan`; this route itself is stateless (no DB write).
 
+Picking an alternative also writes a `preference` memory naming the swap (old task → chosen task) — which framing of the same work they reached for is a genuine preference signal. Plain Edit and Skip do not write memories: an edit is the user's own wording (nothing generalizable), and a bare skip doesn't say *why*, so both would add noise without adding signal.
+
 **DB reads:** `mountains`  
-**DB writes:** none
+**DB writes:** none (the client writes the `preference` memory via `POST /api/memory`)
 
 ---
 
@@ -362,7 +407,7 @@ Triggered server-side by `POST /api/plan` at week rollover: before generating, t
 }
 ```
 
-**DB reads:** `mountains`, `reflections` (last 4), `progress_logs` (last 14), `memory` (motivation, obstacle, behavior_pattern), `weekly_plans` (latest, auto mode only — for task statuses + load_feel)  
+**DB reads:** `mountains`, `reflections` (last 4), `progress_logs` (last 14), `memory` (motivation, obstacle, behavior_pattern), `weekly_plans` (auto mode only — the latest **active** week via `activeHistory()`, for task statuses + load_feel; a never-started draft is skipped, since reflecting on work the user never agreed to do would manufacture failures)  
 **DB writes:**
 - `reflections` — new reflection row
 - `memory` — auto-writes all entries from `memories_to_store` with `source: "reflection"`
@@ -515,12 +560,12 @@ Triggered server-side by `POST /api/plan` at week rollover: before generating, t
 | Research (pre) | — | — |
 | Research (post) | mountains, research, memory | research |
 | Generator | memory | mountains, research |
-| Planning | mountains, weekly_plans, progress_logs, memory | weekly_plans |
+| Planning | mountains, weekly_plans (active only), progress_logs, memory (incl. preference) | weekly_plans |
 | Progress Tracking | mountains, progress_logs | progress_logs, mountains |
-| Reflection | mountains, reflections, progress_logs, memory | reflections, memory |
+| Reflection | mountains, reflections, progress_logs, memory, weekly_plans (latest active, auto mode) | reflections, memory |
 | Memory | — | memory |
-| Guide | mountains, memory, weekly_plans, reflections, progress_logs, guide_chats, guide_messages | guide_chats, guide_messages, memory, progress_logs |
-| Proactive | mountains, progress_logs, weekly_plans | guide_chats, guide_messages |
+| Guide | mountains, memory, weekly_plans (active only), reflections, progress_logs, guide_chats, guide_messages | guide_chats, guide_messages, memory, progress_logs |
+| Proactive | mountains, progress_logs, weekly_plans (active only) | guide_chats, guide_messages |
 | Strategic Intelligence | mountains, memory, reflections, progress_logs | — |
 
 ---

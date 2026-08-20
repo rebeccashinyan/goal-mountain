@@ -1,33 +1,54 @@
 import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
-
-interface ScheduleDay {
-  day: string;
-  tasks: { task: string; duration: string; priority: string; status?: string }[];
-  finished?: boolean;
-  load_feel?: string;
-}
+import {
+  diffSchedules,
+  isEmptyDiff,
+  mergeKeepingFinished,
+  planStatus,
+  type PlanDay,
+  type PlanRow,
+} from "@/lib/plans";
 
 const ACTION_INSTRUCTIONS: Record<string, string> = {
   lighter:
-    "Reduce the load for the remaining days — fewer tasks and/or shorter durations. Don't punish the user, just make it lighter.",
+    "Reduce the load for the remaining days by DROPPING whole tasks and/or SHORTENING durations. Never split one task into several — that adds load, it doesn't reduce it. Each remaining day must end up with the same number of tasks or fewer than it has now. Don't punish the user, just make it lighter.",
   different_approach:
     "Keep the same goal and remaining time, but restructure the remaining tasks around a meaningfully different strategy or method than what's there now.",
   regenerate:
     "Throw out the current remaining tasks and generate a fresh, different set of tasks for the remaining days.",
   availability:
-    "The user's available time for the rest of the week has changed. Re-distribute the remaining tasks to fit the new available time.",
+    "The user's available time for the rest of the week has changed. Re-distribute the remaining tasks to fit the new available time — adjust durations and drop or keep whole tasks rather than fragmenting them.",
 };
 
-// One-click plan steering: revises only the days that haven't been
-// finished yet (locked/logged days are left untouched) in response to a
-// single quick-action click, no chat round-trip required.
-export async function POST(request: Request) {
-  const { plan_id, mountain_id, action, available_time } = await request.json();
+// What each steering action teaches us about how this user likes to work.
+// Written as a `preference` memory so future planning starts closer to
+// what they'd have adjusted it to anyway.
+const PREFERENCE_SIGNAL: Record<string, string> = {
+  lighter: "Asked the AI to lighten a weekly plan — may prefer a lower task load than proposed",
+  different_approach:
+    "Asked the AI for a different approach to a weekly plan — the proposed method didn't suit them",
+  regenerate: "Regenerated a whole weekly plan — the proposal missed what they wanted",
+  availability: "Adjusted their stated availability mid-plan — capacity estimates may be off",
+};
 
-  if (!plan_id || !mountain_id || !action || !ACTION_INSTRUCTIONS[action]) {
+// Steering an existing plan: quick-action chips and the guide's plan
+// proposals both land here. On a DRAFT the change applies immediately
+// (nothing is committed yet). On an ACTIVE week it becomes a pending
+// revision the user reviews — an in-progress week is never silently
+// rewritten underneath them.
+export async function POST(request: Request) {
+  const { plan_id, mountain_id, action, available_time, instruction } = await request.json();
+
+  const isCustom = action === "custom";
+  if (!plan_id || !mountain_id || !action || (!isCustom && !ACTION_INSTRUCTIONS[action])) {
     return Response.json(
       { error: "plan_id, mountain_id, and a valid action are required" },
+      { status: 400 }
+    );
+  }
+  if (isCustom && !instruction?.trim()) {
+    return Response.json(
+      { error: "instruction is required for action: \"custom\"" },
       { status: 400 }
     );
   }
@@ -52,7 +73,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "Mountain not found" }, { status: 404 });
   }
 
-  const schedule: ScheduleDay[] = planRow.plan?.schedule || [];
+  const row = planRow as PlanRow;
+  const isDraft = planStatus(row.plan) === "draft";
+  const schedule: PlanDay[] = row.plan?.schedule || [];
   const finishedDays = schedule.filter((d) => d.finished);
   const openDays = schedule.filter((d) => !d.finished);
 
@@ -61,6 +84,7 @@ export async function POST(request: Request) {
   }
 
   const currentMilestone = mountain.milestones[mountain.current_milestone_index];
+  const directive = isCustom ? instruction.trim() : ACTION_INSTRUCTIONS[action];
 
   const completion = await openai.chat.completions.create({
     model: "gpt-5-mini",
@@ -68,13 +92,15 @@ export async function POST(request: Request) {
     messages: [
       {
         role: "system",
-        content: `You are the Planning + Strategy Agent for Goal Mountain, making a targeted revision to an existing weekly plan in response to a single user reaction (a one-click "steer" action, not a conversation).
+        content: `You are the Planning + Strategy Agent for Goal Mountain, making a targeted revision to an existing weekly plan in response to a single user reaction (a one-click "steer" action or a short request from the guide conversation, not an open-ended replan).
 
-Instruction: ${ACTION_INSTRUCTIONS[action]}
+Instruction: ${directive}
 
 Rules:
 - Only revise the days listed under "Days to revise" — return exactly that set of day names, nothing more, nothing less.
 - Never reference or reintroduce the finished/locked days — those are done and out of scope.
+- Change only what the instruction actually calls for. For any task that should survive the change, REUSE ITS EXACT ORIGINAL TEXT, character for character — the user is shown a precise before/after diff, and needlessly rewording an unchanged task makes it look like work was removed and replaced.
+- Do not split one task into several, and do not merge several into one, unless the instruction explicitly asks for that.
 - Be specific with tasks: "Complete chapter 3 exercises" not "Study more".
 
 Return a JSON object:
@@ -103,33 +129,93 @@ Days to revise: ${JSON.stringify(openDays)}`,
   }
 
   const result = JSON.parse(content);
-  const revisedDays: { day: string; tasks: ScheduleDay["tasks"] }[] = result.schedule || [];
+  const revisedDays: { day: string; tasks: PlanDay["tasks"] }[] = result.schedule || [];
+  const proposedSchedule = mergeKeepingFinished(schedule, revisedDays as PlanDay[]);
+  const note = result.note || "Plan updated";
 
-  const mergedSchedule = schedule.map((d) => {
-    if (d.finished) return d;
-    const revised = revisedDays.find((r) => r.day === d.day);
-    return revised ? { day: d.day, tasks: revised.tasks } : d;
-  });
+  // Preference signal — recorded for both paths, since asking for the change
+  // is the signal, regardless of whether it needed review first.
+  const signal = isCustom
+    ? `Asked the AI to adjust a weekly plan: "${instruction.trim().slice(0, 160)}"`
+    : PREFERENCE_SIGNAL[action];
+  if (signal) {
+    const content = available_time ? `${signal} (stated availability: ${available_time})` : signal;
+    // Repeating the same steer is the signal getting stronger, not a new
+    // preference — bump the existing row instead of stacking duplicates
+    // that would crowd out other context.
+    const { data: existing } = await supabase
+      .from("memory")
+      .select("id")
+      .eq("mountain_id", mountain_id)
+      .eq("category", "preference")
+      .eq("content", content)
+      .limit(1);
 
-  const updatedPlan = {
-    ...planRow.plan,
-    schedule: mergedSchedule,
-    focus_area: result.focus_area || planRow.plan?.focus_area,
-  };
+    if (existing?.length) {
+      await supabase
+        .from("memory")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", existing[0].id)
+        .then(undefined, () => {});
+    } else {
+      await supabase
+        .from("memory")
+        .insert({
+          mountain_id,
+          category: "preference",
+          content,
+          metadata: { source: "plan_steering", action },
+        })
+        .then(undefined, () => {});
+    }
+  }
+
+  // Draft: not committed to anything yet, so just apply it.
+  if (isDraft) {
+    const { data, error } = await supabase
+      .from("weekly_plans")
+      .update({
+        plan: {
+          ...row.plan,
+          schedule: proposedSchedule,
+          focus_area: result.focus_area || row.plan?.focus_area,
+        },
+        priority_recommendation: result.priority_recommendation || row.priority_recommendation,
+      })
+      .eq("id", plan_id)
+      .select()
+      .single();
+
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ ...data, mode: "applied", note });
+  }
+
+  // Active week: propose, don't overwrite. The live schedule is untouched
+  // until the user applies the revision.
+  const diff = diffSchedules(schedule, proposedSchedule);
+  if (isEmptyDiff(diff)) {
+    return Response.json({ ...row, mode: "unchanged", note: "No changes needed — your plan already fits." });
+  }
 
   const { data, error } = await supabase
     .from("weekly_plans")
     .update({
-      plan: updatedPlan,
-      priority_recommendation: result.priority_recommendation || planRow.priority_recommendation,
+      plan: {
+        ...row.plan,
+        pending_revision: {
+          schedule: proposedSchedule,
+          focus_area: result.focus_area || row.plan?.focus_area,
+          priority_recommendation: result.priority_recommendation || row.priority_recommendation,
+          note,
+          diff,
+          created_at: new Date().toISOString(),
+        },
+      },
     })
     .eq("id", plan_id)
     .select()
     .single();
 
-  if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
-  }
-
-  return Response.json({ ...data, note: result.note || "Plan updated" });
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  return Response.json({ ...data, mode: "revision", note, diff });
 }

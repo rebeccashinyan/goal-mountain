@@ -1,5 +1,6 @@
 import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
+import { activeHistory, type PlanRow } from "@/lib/plans";
 
 export async function POST(request: Request) {
   const { mountain_id } = await request.json();
@@ -29,12 +30,15 @@ export async function POST(request: Request) {
     .order("created_at", { ascending: false })
     .limit(14);
 
-  const { data: recentPlan } = await supabase
+  // Active plans only — nudging someone about a draft they never started
+  // would be chasing them over work they never committed to.
+  const { data: planRows } = await supabase
     .from("weekly_plans")
-    .select("plan, next_best_action")
+    .select("*")
     .eq("mountain_id", mountain_id)
     .order("created_at", { ascending: false })
-    .limit(1);
+    .limit(20);
+  const recentPlan = activeHistory((planRows || []) as PlanRow[], 1);
 
   // Detect conditions
   const lastLogDate = recentLogs?.[0]?.created_at;

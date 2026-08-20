@@ -14,6 +14,7 @@ export interface DailyReviewContext {
 export interface PlanTalkContext {
   kind: "plan_talk";
   summary: string;
+  planId: string;
 }
 
 export type MiniChatContext = DailyReviewContext | PlanTalkContext;
@@ -144,26 +145,36 @@ export default function MiniGuideChat({
     if (planAction) regeneratePlan(planAction.user_constraints, planAction.available_time);
   }
 
-  // The guide proposed a plan change — regenerate it right here so the
-  // schedule on this page updates while the conversation continues
+  // The guide proposed a plan change. This goes through the same steering
+  // endpoint as the quick-action chips, so an already-started week gets a
+  // reviewable revision rather than being silently rewritten mid-climb.
   async function regeneratePlan(userConstraints?: string, availableTime?: string) {
+    if (context.kind !== "plan_talk") return;
     setSending(true);
     try {
-      const res = await fetch("/api/plan", {
+      const res = await fetch("/api/plan/steer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          plan_id: context.planId,
           mountain_id: mountainId,
-          user_constraints: userConstraints,
+          action: "custom",
+          instruction: userConstraints || "Adjust the remaining days to better fit the user's situation.",
           available_time: availableTime,
         }),
       });
       if (!res.ok) throw new Error();
+      const data = await res.json();
       onPlanUpdated?.();
       setMessages((prev) => [...prev, {
         id: `note-${Date.now()}`,
         role: "ai",
-        content: "✓ Your weekly plan is updated — take a look at the schedule on this page.",
+        content:
+          data.mode === "revision"
+            ? "I've put together suggested changes — review them on the schedule and choose Apply changes or Keep current plan."
+            : data.mode === "unchanged"
+              ? "Your plan already fits — I didn't change anything."
+              : "✓ Your draft is updated — take a look at the schedule on this page.",
         suggested_replies: [],
         note: true,
       }]);

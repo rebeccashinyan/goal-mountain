@@ -1,5 +1,6 @@
 import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
+import { activeHistory, type PlanRow } from "@/lib/plans";
 
 export async function POST(request: Request) {
   const { message, mountain_id, conversation_history, initial_context } =
@@ -66,12 +67,15 @@ ${allMemories?.map((m) => m.content).join("; ") || "None yet"}`;
       .order("created_at", { ascending: false })
       .limit(20);
 
-    const { data: recentPlan } = await supabase
+    // Only the plan the user actually started — an unreviewed draft isn't
+    // what they're climbing, so the guide must not coach against it.
+    const { data: planRows } = await supabase
       .from("weekly_plans")
-      .select("plan, priority_recommendation, next_best_action, strategy_notes")
+      .select("*")
       .eq("mountain_id", mountain_id)
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(20);
+    const recentPlan = activeHistory((planRows || []) as PlanRow[], 1);
 
     const { data: recentReflection } = await supabase
       .from("reflections")

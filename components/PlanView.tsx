@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { DailyReviewContext } from "./MiniGuideChat";
+import { effectivePlans, isActivePlan, planStatus, type PendingRevision } from "@/lib/plans";
 
 type TaskStatus = "done" | "missed";
 type SteerAction = "lighter" | "different_approach" | "regenerate" | "availability";
@@ -29,11 +30,12 @@ interface PlanData {
     focus_area?: string;
     difficulty_level?: string;
     status?: "draft" | "active";
+    what_changed?: string[];
+    pending_revision?: PendingRevision;
   };
   priority_recommendation: string;
   next_best_action: string;
   strategy_notes: string;
-  adjustments?: string[];
   created_at: string;
 }
 
@@ -113,7 +115,7 @@ export default function PlanView({
 }: {
   mountainId: string;
   onDailyReview?: (ctx: DailyReviewContext) => void;
-  onPlanTalk?: (planSummary: string) => void;
+  onPlanTalk?: (planSummary: string, planId: string) => void;
   refreshKey?: number;
 }) {
   const [plans, setPlans] = useState<PlanData[]>([]);
@@ -144,18 +146,34 @@ export default function PlanView({
   const [undoToast, setUndoToast] = useState<{ message: string; previousPlan: PlanData } | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [startingWeek, setStartingWeek] = useState(false);
+  const [resolvingRevision, setResolvingRevision] = useState(false);
+
   const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
   const todayWeekStart = mondayOf(new Date());
 
+  // One plan per week: regenerating a draft leaves superseded rows behind,
+  // so the newest row for a week_start is the one that counts.
+  const weekPlans = effectivePlans(plans);
   const plan = viewedWeekStart
-    ? plans.find((p) => p.week_start === viewedWeekStart) ?? null
+    ? weekPlans.find((p) => p.week_start === viewedWeekStart) ?? null
     : null;
   const isCurrentCalendarWeek = viewedWeekStart === todayWeekStart;
   const isWeekInFuture = !!viewedWeekStart && viewedWeekStart > todayWeekStart;
-  const isDraft = plan?.plan.status === "draft";
+  const isDraft = !!plan && planStatus(plan.plan) === "draft";
   const hasOpenDay = plan?.plan.schedule?.some((d) => !d.finished) ?? false;
+  const revision = plan?.plan.pending_revision ?? null;
+  const totalDiffCount = revision
+    ? revision.diff.removed.length +
+      revision.diff.added.length +
+      revision.diff.moved.length +
+      revision.diff.retimed.length
+    : 0;
+  const whatChanged = isDraft ? plan?.plan.what_changed ?? [] : [];
+  // "First week" only while the user has never actually started one.
+  const hasStartedAWeek = weekPlans.some(isActivePlan);
 
-  const weekStarts = plans.map((p) => p.week_start);
+  const weekStarts = weekPlans.map((p) => p.week_start);
   const minWeekStart = weekStarts.length
     ? weekStarts.reduce((a, b) => (a < b ? a : b))
     : todayWeekStart;
@@ -230,7 +248,7 @@ export default function PlanView({
       ?.map((d) => `${d.day}: ${d.tasks.map((t) => `${t.task} (${t.duration})`).join(", ")}`)
       .join(" | ");
     const summary = `Week of ${plan.week_start}. Focus: ${plan.plan.focus_area || "not set"}. Schedule: ${days || "empty"}`.slice(0, 700);
-    onPlanTalk?.(summary);
+    onPlanTalk?.(summary, plan.id);
   }
 
   // opts.persistPriority also writes priority_recommendation — needed when
@@ -260,8 +278,9 @@ export default function PlanView({
     setUndoToast(null);
   }
 
-  // One-click plan steering — revises only the not-yet-finished days,
-  // no chat round-trip. Logged/finished days are never touched.
+  // One-click plan steering. On a draft the change lands immediately (with
+  // undo) — nothing is committed yet. On a week already underway the server
+  // returns a *proposed revision* instead, reviewed before it takes effect.
   async function runSteerAction(action: SteerAction, availableTimeOverride?: string) {
     if (!plan || steering) return;
     const previousPlan = plan;
@@ -278,10 +297,11 @@ export default function PlanView({
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const { note, ...updated } = data;
-        setPlans((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
-        showUndoToast(note || "Plan updated", previousPlan);
+        const data: PlanData & { note?: string; mode?: string } = await res.json();
+        setPlans((prev) => prev.map((p) => (p.id === data.id ? { ...p, ...data } : p)));
+        // Only a directly-applied change needs undo; a revision is already
+        // reversible by declining it.
+        if (data.mode === "applied") showUndoToast(data.note || "Plan updated", previousPlan);
       }
     } finally {
       setSteering(null);
@@ -290,9 +310,36 @@ export default function PlanView({
     }
   }
 
-  function startPlan() {
-    if (!plan) return;
-    updatePlanJson({ ...plan, plan: { ...plan.plan, status: undefined } });
+  // Commit the draft — this is the moment tracking becomes possible.
+  async function startWeek() {
+    if (!plan || startingWeek) return;
+    setStartingWeek(true);
+    const started = { ...plan, plan: { ...plan.plan, status: "active" as const } };
+    setPlans((prev) => prev.map((p) => (p.id === started.id ? started : p)));
+    await fetch("/api/plan", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan_id: started.id, plan: started.plan }),
+    }).catch(() => {});
+    setStartingWeek(false);
+  }
+
+  async function resolveRevision(decision: "apply" | "discard") {
+    if (!plan || resolvingRevision) return;
+    setResolvingRevision(true);
+    try {
+      const res = await fetch("/api/plan/revision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: plan.id, decision }),
+      });
+      if (res.ok) {
+        const data: PlanData = await res.json();
+        setPlans((prev) => prev.map((p) => (p.id === data.id ? { ...p, ...data } : p)));
+      }
+    } finally {
+      setResolvingRevision(false);
+    }
   }
 
   function startEditTask(dayName: string, index: number, task: Task) {
@@ -391,12 +438,29 @@ export default function PlanView({
   function applyAlternative(dayName: string, index: number, alt: { task: string; duration: string; priority: string }) {
     if (!plan?.plan.schedule) return;
     const previousPlan = plan;
+    const original = plan.plan.schedule.find((d) => d.day === dayName)?.tasks[index];
     const schedule = plan.plan.schedule.map((d) => {
       if (d.day !== dayName) return d;
       const tasks = d.tasks.map((t, i) => (i === index ? { task: alt.task, duration: alt.duration, priority: alt.priority } : t));
       return { ...d, tasks };
     });
     updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
+
+    // Which alternative they reached for is a preference signal worth
+    // keeping — it's a choice between framings of the same work.
+    if (original) {
+      fetch("/api/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mountain_id: mountainId,
+          category: "preference",
+          content: `Swapped the planned task "${original.task.slice(0, 90)}" for "${alt.task.slice(0, 90)}"`,
+          metadata: { source: "task_replace" },
+        }),
+      }).catch(() => {});
+    }
+
     showUndoToast("Task updated", previousPlan);
     setReplacingTask(null);
     setAlternatives([]);
@@ -483,7 +547,7 @@ export default function PlanView({
       <div className="flex flex-col gap-4 px-1 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-forest-950">
-            {isDraft ? "Your first week" : "Weekly Plan"}
+            {isDraft ? (hasStartedAWeek ? "Your next week" : "Your first week") : "Weekly Plan"}
             {isDraft && (
               <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-widest text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
                 Draft
@@ -536,7 +600,9 @@ export default function PlanView({
           )}
           {isDraft && (
             <p className="mt-1 text-sm text-stone-500">
-              I made a starting plan based on your goal. Adjust anything before you begin.
+              {hasStartedAWeek
+                ? "I prepared a starting plan for this week. Adjust anything before you begin."
+                : "I made a starting plan based on your goal. Adjust anything before you begin."}
             </p>
           )}
         </div>
@@ -629,8 +695,100 @@ export default function PlanView({
             </div>
           )}
 
+          {/* What changed — how this draft adapted to the week just finished */}
+          {whatChanged.length > 0 && (
+            <div
+              className="rounded-2xl border border-forest-200 bg-forest-50/60 p-5"
+              style={{ boxShadow: cardShadow }}
+            >
+              <p className="text-xs font-medium text-forest-700 uppercase tracking-wide mb-2">
+                What changed from last week
+              </p>
+              <ul className="space-y-1.5">
+                {whatChanged.slice(0, 4).map((change, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-forest-900 leading-relaxed">
+                    <span className="text-forest-500" aria-hidden="true">→</span>
+                    {change}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Proposed revision — an active week is never rewritten without review */}
+          {revision && (
+            <div
+              className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5"
+              style={{ boxShadow: cardShadow }}
+            >
+              <p className="text-xs font-medium text-amber-800 uppercase tracking-wide mb-1.5">
+                Suggested changes — not applied yet
+              </p>
+              <p className="text-sm text-stone-700 leading-relaxed">{revision.note}</p>
+
+              <ul className="mt-3 space-y-1">
+                {revision.diff.removed.slice(0, 4).map((c, i) => (
+                  <li key={`r${i}`} className="flex gap-1.5 text-xs text-stone-600">
+                    <span className="shrink-0 font-semibold text-summit">− Remove</span>
+                    <span className="shrink-0 text-stone-400">{c.day}:</span>
+                    <span className="truncate">{c.task}</span>
+                  </li>
+                ))}
+                {revision.diff.added.slice(0, 4).map((c, i) => (
+                  <li key={`a${i}`} className="flex gap-1.5 text-xs text-stone-600">
+                    <span className="shrink-0 font-semibold text-forest-700">+ Add</span>
+                    <span className="shrink-0 text-stone-400">{c.day}:</span>
+                    <span className="truncate">{c.task}</span>
+                  </li>
+                ))}
+                {revision.diff.moved.slice(0, 4).map((c, i) => (
+                  <li key={`m${i}`} className="flex gap-1.5 text-xs text-stone-600">
+                    <span className="shrink-0 font-semibold text-amber-700">→ Move</span>
+                    <span className="truncate">{c.task}</span>
+                    <span className="shrink-0 text-stone-400">({c.from} → {c.to})</span>
+                  </li>
+                ))}
+                {revision.diff.retimed.slice(0, 4).map((c, i) => (
+                  <li key={`t${i}`} className="flex gap-1.5 text-xs text-stone-600">
+                    <span className="shrink-0 font-semibold text-amber-700">◷ Retime</span>
+                    <span className="truncate">{c.task}</span>
+                    <span className="shrink-0 text-stone-400">({c.from} → {c.to})</span>
+                  </li>
+                ))}
+                {totalDiffCount > 4 && (
+                  <li className="pt-0.5 text-[11px] text-stone-500">
+                    Showing the first few of {totalDiffCount} changes — apply to see the full week.
+                  </li>
+                )}
+              </ul>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={resolvingRevision}
+                  onClick={() => resolveRevision("apply")}
+                  className="text-sm px-4 py-2 rounded-xl bg-forest-700 text-white font-semibold hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                  style={{ boxShadow: "0 2px 8px rgba(20,60,35,0.2)" }}
+                >
+                  Apply changes
+                </button>
+                <button
+                  type="button"
+                  disabled={resolvingRevision}
+                  onClick={() => resolveRevision("discard")}
+                  className="text-sm px-4 py-2 rounded-xl bg-white text-stone-600 font-semibold border border-stone-200 hover:bg-stone-50 hover:text-stone-800 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                >
+                  Keep current plan
+                </button>
+              </div>
+              <p className="mt-2.5 text-[11px] text-stone-500">
+                Days you&apos;ve already logged stay exactly as they are.
+              </p>
+            </div>
+          )}
+
           {/* Quick-action steering — one-click reactions to the plan, no chat required */}
-          {hasOpenDay && (
+          {hasOpenDay && !revision && (
             <div
               className="rounded-2xl border border-[#ECECEC] bg-white p-4"
               style={{ boxShadow: cardShadow }}
@@ -1160,42 +1318,21 @@ export default function PlanView({
             </div>
           )}
 
-          {/* Start this plan — commits the draft, turning on day-tracking */}
+          {/* Start this week — commits the draft; tracking begins here */}
           {isDraft && (
             <div className="flex flex-col sm:flex-row items-center gap-3 rounded-2xl border border-forest-200 bg-forest-50 p-4">
               <p className="flex-1 text-sm text-forest-800">
-                Ready when you are — starting locks today in as day one.
+                Nothing is tracked until you start — take as long as you need to adjust it.
               </p>
               <button
                 type="button"
-                onClick={startPlan}
-                className="w-full sm:w-auto text-sm px-5 py-2.5 rounded-xl bg-forest-700 text-white font-semibold hover:bg-forest-600 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                onClick={startWeek}
+                disabled={startingWeek}
+                className="w-full sm:w-auto text-sm px-5 py-2.5 rounded-xl bg-forest-700 text-white font-semibold hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
                 style={{ boxShadow: "0 2px 8px rgba(20,60,35,0.2)" }}
               >
-                Start this plan →
+                {startingWeek ? "Starting..." : "Start this week →"}
               </button>
-            </div>
-          )}
-
-          {/* Adjustments */}
-          {plan.adjustments && plan.adjustments.length > 0 && (
-            <div
-              className="rounded-2xl border border-[#ECECEC] bg-white p-5"
-              style={{ boxShadow: cardShadow }}
-            >
-              <p className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-2">
-                Adjustments from last week
-              </p>
-              <ul className="space-y-1.5">
-                {plan.adjustments.map((adj, i) => (
-                  <li
-                    key={i}
-                    className="text-sm text-stone-600 leading-relaxed"
-                  >
-                    {adj}
-                  </li>
-                ))}
-              </ul>
             </div>
           )}
         </>

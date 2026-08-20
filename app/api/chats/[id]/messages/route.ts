@@ -1,5 +1,6 @@
 import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
+import { activeHistory, type PlanRow } from "@/lib/plans";
 
 export async function GET(
   _request: Request,
@@ -88,13 +89,16 @@ Known patterns: ${allMemories?.map((m) => m.content).join("; ") || "None yet"}`;
     milestones = mountain.milestones;
     currentMilestoneIndex = mountain.current_milestone_index;
 
-    const [{ data: memories }, { data: recentPlan }, { data: recentReflection }, { data: recentLogs }] =
+    const [{ data: memories }, { data: planRows }, { data: recentReflection }, { data: recentLogs }] =
       await Promise.all([
         supabase.from("memory").select("content, category").eq("mountain_id", mountain_id).order("created_at", { ascending: false }).limit(20),
-        supabase.from("weekly_plans").select("priority_recommendation, next_best_action, strategy_notes").eq("mountain_id", mountain_id).order("created_at", { ascending: false }).limit(1),
+        supabase.from("weekly_plans").select("*").eq("mountain_id", mountain_id).order("created_at", { ascending: false }).limit(20),
         supabase.from("reflections").select("summary, blockers").eq("mountain_id", mountain_id).order("created_at", { ascending: false }).limit(1),
         supabase.from("progress_logs").select("log_type, data, created_at").eq("mountain_id", mountain_id).order("created_at", { ascending: false }).limit(10),
       ]);
+
+    // The plan the user actually started, not an unreviewed draft.
+    const recentPlan = activeHistory((planRows || []) as PlanRow[], 1);
 
     const currentMilestone = mountain.milestones[mountain.current_milestone_index];
     const nextMilestone = mountain.milestones[mountain.current_milestone_index + 1];

@@ -79,16 +79,27 @@ Planning + Strategy Agent output. One row per planning session (multiple per mou
 | `id` | uuid PK | gen_random_uuid() | — |
 | `mountain_id` | uuid FK → mountains.id ON DELETE CASCADE | — | — |
 | `week_start` | date NOT NULL | — | Monday of the week this plan was generated for |
-| `plan` | jsonb | `{}` | Full schedule — `{ schedule: [{ day, tasks: [{ task, duration, priority, status? }], finished?, load_feel? }], focus_area, difficulty_level, status? }`. Daily check-in writes `status: "done"\|"missed"` per task, plus `finished: true` and `load_feel: "lighter"\|"about_right"\|"heavier"` per day (via `PATCH /api/plan`). Top-level `status: "draft"` is stamped only on a mountain's very first plan (cleared once the user hits "Start this plan") — see `PlanView` in UI_SPEC.md |
-| `priority_recommendation` | text | null | The single most important thing to do this week. Can be revised by `POST /api/plan/steer` in addition to the initial `POST /api/plan` |
+| `plan` | jsonb | `{}` | Full schedule + lifecycle state — see the breakdown below |
+| `priority_recommendation` | text | null | The single most important thing to do this week. Also revised by `POST /api/plan/steer` and by applying a revision |
 | `next_best_action` | text | null | The very next thing to do right now |
 | `strategy_notes` | text | null | Broader strategic thinking about the user's trajectory |
 | `created_at` | timestamptz | now() | — |
 
+**`plan` jsonb shape:**
+
+| Key | Description |
+|-----|-------------|
+| `schedule` | `[{ day, tasks: [{ task, duration, priority, status? }], finished?, load_feel? }]`. The daily check-in writes `status: "done"\|"missed"` per task, plus `finished: true` and `load_feel: "lighter"\|"about_right"\|"heavier"` per day |
+| `focus_area`, `difficulty_level` | From the Planning Agent |
+| `status` | `"draft"` \| `"active"`. **Every** generated week starts as `"draft"`; "Start this week" flips it to `"active"`. Rows predating this lifecycle have no `status` — those count as legacy active plans (anything not explicitly `"draft"` is active) |
+| `what_changed` | Short phrases describing how this week adapted to the last one. Populated from the second week onward; empty on a first week |
+| `pending_revision` | `{ schedule, focus_area, priority_recommendation, note, diff, created_at }` — a proposed mid-week change awaiting the user's decision. Present only on active weeks, and cleared by `POST /api/plan/revision` |
+
 **Notes:**
-- The Planning Agent reads the last 3 plans to learn from past performance before generating a new one.
-- The Overview page reads the most recent plan via `GET /api/plan?mountain_id=uuid`.
-- `POST /api/plan/steer` (one-click quick actions) and `POST /api/plan/replace-task` (per-task swap suggestions) are lightweight companions to `POST /api/plan` — see AGENTS.md → Planning + Strategy Agent. Neither creates a new row; `steer` updates the existing plan row in place, `replace-task` is stateless and just returns suggestions for the client to `PATCH` in.
+- **`week_start` is not unique.** Regenerating a draft inserts another row for the same week, so the *effective* plan for a week is the **newest row for that `week_start`** — never simply the newest row overall, which may be a next-week draft the user hasn't accepted.
+- **Only active plans are behavioural evidence.** The Planning, Reflection, Guide, and Proactive agents filter to active plans before reading history; a draft the user never started must never be interpreted as tasks they missed. Both rules live in [lib/plans.ts](lib/plans.ts) (`effectivePlans()`, `activeHistory()`) — use them rather than re-deriving the filter.
+- Only an active plan can produce daily tracking, progress logs, daily check-ins, or a week reflection.
+- `POST /api/plan/steer` (quick actions + guide requests), `POST /api/plan/revision` (apply/discard a proposed change), and `POST /api/plan/replace-task` (per-task swap suggestions) are companions to `POST /api/plan` — see AGENTS.md → Planning + Strategy Agent. None of them insert rows: `steer` and `revision` update the existing plan in place, and `replace-task` is stateless.
 
 ---
 
@@ -235,10 +246,11 @@ All child rows are deleted when a mountain is deleted (ON DELETE CASCADE).
 | POST | `/api/generate-mountain` | mountains, research | memory |
 | POST | `/api/research` | research (post-mode only) | mountains, research, memory |
 | GET | `/api/research` | — | research |
-| POST | `/api/plan` | weekly_plans | mountains, weekly_plans, progress_logs, memory |
+| POST | `/api/plan` | weekly_plans (always as a draft) | mountains, weekly_plans, progress_logs, memory |
 | PATCH | `/api/plan` | weekly_plans (plan jsonb, optionally priority_recommendation) | — |
 | GET | `/api/plan` | — | weekly_plans |
-| POST | `/api/plan/steer` | weekly_plans (plan jsonb, priority_recommendation) | weekly_plans, mountains |
+| POST | `/api/plan/steer` | weekly_plans (applies on a draft, proposes on an active week), memory (preference) | weekly_plans, mountains, memory |
+| POST | `/api/plan/revision` | weekly_plans (apply/discard a pending revision) | weekly_plans |
 | POST | `/api/plan/replace-task` | — | mountains |
 | POST | `/api/track-progress` | progress_logs, mountains | mountains, progress_logs |
 | GET | `/api/track-progress` | — | progress_logs |

@@ -874,7 +874,10 @@ export default function PlanView({
                               <div key={i}>
                                 <div className="group relative rounded-xl border border-[#ECECEC] bg-white p-2.5">
                                   {canEditTasks && !isEditingThis && (
-                                    <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
+                                    <div
+                                      className="absolute right-1 top-1 flex items-center gap-0.5 rounded-lg bg-white/95 pl-1 opacity-0 backdrop-blur-[1px] group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200"
+                                      style={{ boxShadow: "0 1px 4px rgba(43,58,42,0.12)" }}
+                                    >
                                       <button
                                         type="button"
                                         title="Edit"
@@ -949,7 +952,7 @@ export default function PlanView({
                                     </div>
                                   ) : (
                                     <>
-                                      <p className="text-xs font-medium leading-relaxed text-stone-700 pr-14">
+                                      <p className="text-xs font-medium leading-relaxed text-stone-700">
                                         <span
                                           className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle ${priorityDot[task.priority] || "bg-stone-300"}`}
                                         />

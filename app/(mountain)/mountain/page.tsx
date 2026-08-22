@@ -9,6 +9,7 @@ import MiniGuideChat, { type MiniChatContext } from "@/components/MiniGuideChat"
 
 interface MountainMilestone {
   name: string;
+  mapLabel?: string;
   description: string;
   completed: boolean;
   current?: boolean;
@@ -109,6 +110,10 @@ function MountainContent() {
         onDailyReview={setMiniChat}
         onPlanTalk={(summary, planId) => setMiniChat({ kind: "plan_talk", summary, planId })}
         refreshKey={planRefreshKey}
+        currentMilestoneName={
+          mountain.milestones[mountain.current_milestone_index]?.mapLabel ||
+          mountain.milestones[mountain.current_milestone_index]?.name
+        }
       />
       {miniChat && (
         <MiniGuideChat

@@ -2,10 +2,23 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { DailyReviewContext } from "./MiniGuideChat";
-import { effectivePlans, isActivePlan, planStatus, type PendingRevision } from "@/lib/plans";
+import {
+  WEEK_DAYS,
+  effectivePlans,
+  formatMinutes,
+  isActivePlan,
+  parseDurationMinutes,
+  planStatus,
+  type PendingRevision,
+} from "@/lib/plans";
 
 type TaskStatus = "done" | "missed";
-type SteerAction = "lighter" | "different_approach" | "regenerate" | "availability";
+type SteerAction = "lighter" | "strategy" | "regenerate" | "availability";
+
+interface StrategyOption {
+  label: string;
+  detail: string;
+}
 
 interface Task {
   task: string;
@@ -53,16 +66,6 @@ const priorityDot: Record<string, string> = {
   medium: "bg-amber-400",
   low: "bg-forest-300",
 };
-
-const WEEK_DAYS = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
 
 const loadFeelOptions: { value: string; label: string }[] = [
   { value: "lighter", label: "Lighter than planned" },
@@ -112,11 +115,13 @@ export default function PlanView({
   onDailyReview,
   onPlanTalk,
   refreshKey = 0,
+  currentMilestoneName,
 }: {
   mountainId: string;
   onDailyReview?: (ctx: DailyReviewContext) => void;
   onPlanTalk?: (planSummary: string, planId: string) => void;
   refreshKey?: number;
+  currentMilestoneName?: string;
 }) {
   const [plans, setPlans] = useState<PlanData[]>([]);
   const [viewedWeekStart, setViewedWeekStart] = useState<string | null>(null);
@@ -134,10 +139,18 @@ export default function PlanView({
   const [steering, setSteering] = useState<SteerAction | null>(null);
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
   const [availabilityInput, setAvailabilityInput] = useState("");
+  const [strategyOpen, setStrategyOpen] = useState(false);
+  const [strategies, setStrategies] = useState<StrategyOption[]>([]);
+  const [strategiesLoading, setStrategiesLoading] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
-  // Per-task Edit / Replace / Skip
+  // "You freed up N min" — offered after an edit or removal creates slack
+  const [freedTime, setFreedTime] = useState<{ day: string; minutes: number } | null>(null);
+  const [fillingTime, setFillingTime] = useState(false);
+
+  // Per-task Edit / Replace / Remove
   const [editingTask, setEditingTask] = useState<{ day: string; index: number } | null>(null);
-  const [editDraft, setEditDraft] = useState({ task: "", duration: "" });
+  const [editDraft, setEditDraft] = useState({ task: "", duration: "", day: "" });
   const [replacingTask, setReplacingTask] = useState<{ day: string; index: number } | null>(null);
   const [alternatives, setAlternatives] = useState<{ task: string; duration: string; priority: string }[]>([]);
   const [altLoading, setAltLoading] = useState(false);
@@ -278,17 +291,19 @@ export default function PlanView({
     setUndoToast(null);
   }
 
-  // One-click plan steering. On a draft the change lands immediately (with
-  // undo) — nothing is committed yet. On a week already underway the server
-  // returns a *proposed revision* instead, reviewed before it takes effect.
-  async function runSteerAction(action: SteerAction, availableTimeOverride?: string) {
+  // Whole-plan AI changes. These never land directly — the server returns a
+  // proposed revision to preview, on drafts and active weeks alike.
+  async function runSteerAction(
+    action: SteerAction,
+    opts?: { availableTime?: string; instruction?: string }
+  ) {
     if (!plan || steering) return;
-    const previousPlan = plan;
     setSteering(action);
 
     try {
       const body: Record<string, unknown> = { plan_id: plan.id, mountain_id: mountainId, action };
-      if (availableTimeOverride) body.available_time = availableTimeOverride;
+      if (opts?.availableTime) body.available_time = opts.availableTime;
+      if (opts?.instruction) body.instruction = opts.instruction;
 
       const res = await fetch("/api/plan/steer", {
         method: "POST",
@@ -299,14 +314,36 @@ export default function PlanView({
       if (res.ok) {
         const data: PlanData & { note?: string; mode?: string } = await res.json();
         setPlans((prev) => prev.map((p) => (p.id === data.id ? { ...p, ...data } : p)));
-        // Only a directly-applied change needs undo; a revision is already
-        // reversible by declining it.
-        if (data.mode === "applied") showUndoToast(data.note || "Plan updated", previousPlan);
       }
     } finally {
       setSteering(null);
       setAvailabilityOpen(false);
       setAvailabilityInput("");
+      setStrategyOpen(false);
+      setStrategies([]);
+      setMoreOpen(false);
+    }
+  }
+
+  // "Change strategy" doesn't re-roll the week — it asks what *kind* of
+  // change the user wants, in terms of this plan's actual tasks.
+  async function openStrategies() {
+    if (!plan) return;
+    setStrategyOpen(true);
+    if (strategies.length || strategiesLoading) return;
+    setStrategiesLoading(true);
+    try {
+      const res = await fetch("/api/plan/strategies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: plan.id, mountain_id: mountainId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStrategies(data.strategies || []);
+      }
+    } finally {
+      setStrategiesLoading(false);
     }
   }
 
@@ -345,23 +382,41 @@ export default function PlanView({
   function startEditTask(dayName: string, index: number, task: Task) {
     setReplacingTask(null);
     setEditingTask({ day: dayName, index });
-    setEditDraft({ task: task.task, duration: task.duration });
+    setEditDraft({ task: task.task, duration: task.duration, day: dayName });
   }
 
+  // Edits task text, duration AND which day it sits on — all inline, no AI.
+  // Shortening a task offers the freed time back to the user.
   function commitEditTask() {
     if (!editingTask || !plan?.plan.schedule) return;
     const { day, index } = editingTask;
-    const schedule = plan.plan.schedule.map((d) => {
-      if (d.day !== day) return d;
-      const tasks = d.tasks.map((t, i) =>
-        i === index
-          ? { ...t, task: editDraft.task.trim() || t.task, duration: editDraft.duration.trim() || t.duration }
-          : t
-      );
-      return { ...d, tasks };
-    });
+    const original = plan.plan.schedule.find((d) => d.day === day)?.tasks[index];
+    if (!original) {
+      setEditingTask(null);
+      return;
+    }
+
+    const targetDay = editDraft.day || day;
+    const dayIsOpen = !plan.plan.schedule.find((d) => d.day === targetDay)?.finished;
+    const moveTo = dayIsOpen ? targetDay : day;
+    const updated: Task = {
+      ...original,
+      task: editDraft.task.trim() || original.task,
+      duration: editDraft.duration.trim() || original.duration,
+    };
+
+    let schedule = plan.plan.schedule.map((d) =>
+      d.day === day ? { ...d, tasks: d.tasks.filter((_, i) => i !== index) } : d
+    );
+    schedule = schedule.map((d) =>
+      d.day === moveTo ? { ...d, tasks: [...d.tasks, updated] } : d
+    );
+
     updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
     setEditingTask(null);
+
+    const freed = parseDurationMinutes(original.duration) - parseDurationMinutes(updated.duration);
+    if (moveTo === day && freed >= 10) setFreedTime({ day, minutes: freed });
   }
 
   function addTask(dayName: string) {
@@ -373,19 +428,73 @@ export default function PlanView({
     updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
     setReplacingTask(null);
     setEditingTask({ day: dayName, index: newIndex });
-    setEditDraft({ task: "", duration: "30 min" });
+    setEditDraft({ task: "", duration: "30 min", day: dayName });
   }
 
-  function skipTask(dayName: string, index: number) {
+  // Uses the time an edit or removal freed up — one AI-suggested task,
+  // inserted inline with undo. Stays in the direct-manipulation tier.
+  async function fillFreedTime() {
+    if (!plan || !freedTime || fillingTime) return;
+    setFillingTime(true);
+    const previousPlan = plan;
+    try {
+      const res = await fetch("/api/plan/fill-time", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan_id: plan.id,
+          mountain_id: mountainId,
+          day: freedTime.day,
+          minutes: freedTime.minutes,
+        }),
+      });
+      if (res.ok) {
+        const { task } = await res.json();
+        const schedule = (plan.plan.schedule || []).map((d) =>
+          d.day === freedTime.day ? { ...d, tasks: [...d.tasks, task] } : d
+        );
+        updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
+        showUndoToast(`Added to ${freedTime.day}`, previousPlan);
+      }
+    } finally {
+      setFillingTime(false);
+      setFreedTime(null);
+    }
+  }
+
+  function removeTask(dayName: string, index: number) {
     if (!plan?.plan.schedule) return;
     const previousPlan = plan;
+    const removed = plan.plan.schedule.find((d) => d.day === dayName)?.tasks[index];
     const schedule = plan.plan.schedule.map((d) =>
       d.day === dayName ? { ...d, tasks: d.tasks.filter((_, i) => i !== index) } : d
     );
     updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
+
+    if (removed) {
+      recordPreference(`Removed the planned task "${removed.task.slice(0, 110)}"`, "task_remove");
+      const freed = parseDurationMinutes(removed.duration);
+      if (freed >= 10) setFreedTime({ day: dayName, minutes: freed });
+    }
+
     showUndoToast("Task removed", previousPlan);
     setOpenPicker(null);
     setEditingTask(null);
+  }
+
+  // Direct-manipulation preference signals. Steering writes its own from the
+  // server; these are the ones only the client knows about.
+  function recordPreference(content: string, source: string) {
+    fetch("/api/memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mountain_id: mountainId,
+        category: "preference",
+        content,
+        metadata: { source },
+      }),
+    }).catch(() => {});
   }
 
   async function openReplace(dayName: string, index: number, task: Task) {
@@ -449,16 +558,12 @@ export default function PlanView({
     // Which alternative they reached for is a preference signal worth
     // keeping — it's a choice between framings of the same work.
     if (original) {
-      fetch("/api/memory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mountain_id: mountainId,
-          category: "preference",
-          content: `Swapped the planned task "${original.task.slice(0, 90)}" for "${alt.task.slice(0, 90)}"`,
-          metadata: { source: "task_replace" },
-        }),
-      }).catch(() => {});
+      recordPreference(
+        `Swapped the planned task "${original.task.slice(0, 90)}" for "${alt.task.slice(0, 90)}"`,
+        "task_replace"
+      );
+      const freed = parseDurationMinutes(original.duration) - parseDurationMinutes(alt.duration);
+      if (freed >= 10) setFreedTime({ day: dayName, minutes: freed });
     }
 
     showUndoToast("Task updated", previousPlan);
@@ -807,17 +912,69 @@ export default function PlanView({
                   )}
                   Make it lighter
                 </button>
-                <button
-                  type="button"
-                  disabled={!!steering}
-                  onClick={() => runSteerAction("different_approach")}
-                  className={quickActionClasses}
-                >
-                  {steering === "different_approach" && (
-                    <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                <div className="relative">
+                  <button
+                    type="button"
+                    disabled={!!steering}
+                    onClick={() => (strategyOpen ? setStrategyOpen(false) : openStrategies())}
+                    aria-haspopup="dialog"
+                    aria-expanded={strategyOpen}
+                    className={quickActionClasses}
+                  >
+                    {steering === "strategy" && (
+                      <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                    )}
+                    Change strategy
+                  </button>
+                  {strategyOpen && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Close"
+                        className="fixed inset-0 z-10 cursor-default"
+                        onClick={() => setStrategyOpen(false)}
+                      />
+                      <div
+                        role="dialog"
+                        className="absolute left-0 top-full z-20 mt-2 w-80 rounded-xl border border-[#ECECEC] bg-white p-3 space-y-1.5"
+                        style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                      >
+                        <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                          What should change?
+                        </p>
+                        {strategiesLoading ? (
+                          <div className="flex items-center gap-2 py-2">
+                            <span className="w-3.5 h-3.5 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                            <span className="text-xs text-stone-400">Reading your plan...</span>
+                          </div>
+                        ) : (
+                          strategies.map((s, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              disabled={!!steering}
+                              onClick={() => runSteerAction("strategy", { instruction: s.label })}
+                              className="block w-full rounded-lg border border-[#ECECEC] bg-white px-2.5 py-2 text-left hover:border-forest-300 hover:bg-forest-50 disabled:opacity-40 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                            >
+                              <span className="block text-xs font-semibold text-forest-800">{s.label}</span>
+                              <span className="mt-0.5 block text-[11px] leading-snug text-stone-500">{s.detail}</span>
+                            </button>
+                          ))
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStrategyOpen(false);
+                            startPlanTalk();
+                          }}
+                          className="block w-full rounded-lg px-2.5 py-2 text-left text-xs font-medium text-stone-500 hover:bg-stone-50 hover:text-forest-700 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                        >
+                          Something else… <span className="text-stone-400">(talk it through)</span>
+                        </button>
+                      </div>
+                    </>
                   )}
-                  Different approach
-                </button>
+                </div>
                 <div className="relative">
                   <button
                     type="button"
@@ -853,7 +1010,7 @@ export default function PlanView({
                             <button
                               key={preset}
                               type="button"
-                              onClick={() => runSteerAction("availability", preset)}
+                              onClick={() => runSteerAction("availability", { availableTime: preset })}
                               className="text-[11px] font-medium px-2 py-1 rounded-lg border border-stone-200 text-stone-600 hover:border-forest-300 hover:bg-forest-50 hover:text-forest-800 active:scale-[0.97] transition-colors duration-200"
                             >
                               {preset}
@@ -871,7 +1028,7 @@ export default function PlanView({
                           <button
                             type="button"
                             disabled={!availabilityInput.trim()}
-                            onClick={() => runSteerAction("availability", availabilityInput.trim())}
+                            onClick={() => runSteerAction("availability", { availableTime: availabilityInput.trim() })}
                             className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-forest-700 text-white hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] transition-colors duration-200"
                           >
                             Apply
@@ -881,23 +1038,89 @@ export default function PlanView({
                     </>
                   )}
                 </div>
-                <button
-                  type="button"
-                  disabled={!!steering}
-                  onClick={() => runSteerAction("regenerate")}
-                  className={quickActionClasses}
-                >
-                  {steering === "regenerate" && (
-                    <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                {/* Regenerate is deliberately buried — it re-rolls parts the
+                    user may already be happy with. Targeted edits come first. */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    disabled={!!steering}
+                    onClick={() => setMoreOpen((v) => !v)}
+                    aria-haspopup="menu"
+                    aria-expanded={moreOpen}
+                    aria-label="More plan options"
+                    className="flex h-[34px] w-9 items-center justify-center rounded-xl border border-stone-200 text-stone-400 hover:border-forest-300 hover:text-forest-700 disabled:opacity-40 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                  >
+                    {steering === "regenerate" ? (
+                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-forest-200 border-t-forest-600" />
+                    ) : (
+                      <span className="text-sm leading-none tracking-widest">···</span>
+                    )}
+                  </button>
+                  {moreOpen && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Close menu"
+                        className="fixed inset-0 z-10 cursor-default"
+                        onClick={() => setMoreOpen(false)}
+                      />
+                      <div
+                        role="menu"
+                        className="absolute left-0 top-full z-20 mt-2 w-64 rounded-xl border border-[#ECECEC] bg-white p-1.5"
+                        style={{ boxShadow: "0 12px 32px rgba(43, 58, 42, 0.14), 0 2px 6px rgba(43, 58, 42, 0.08)" }}
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => runSteerAction("regenerate")}
+                          className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-stone-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                        >
+                          <span className="block text-xs font-semibold text-stone-700">Regenerate the whole week</span>
+                          <span className="mt-0.5 block text-[11px] leading-snug text-stone-500">
+                            Replaces every remaining task, including ones you like.
+                          </span>
+                        </button>
+                      </div>
+                    </>
                   )}
-                  Regenerate
-                </button>
+                </div>
                 <button
                   type="button"
                   onClick={startPlanTalk}
                   className="ml-auto text-xs text-stone-400 hover:text-forest-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
                 >
-                  Something more specific? <span className="underline underline-offset-2">Discuss with AI</span>
+                  Rethinking your approach?{" "}
+                  <span className="underline underline-offset-2">Discuss with AI</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Freed-up time — the contextual follow-on to shortening or
+              removing a task, offered rather than auto-filled. */}
+          {freedTime && !revision && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-forest-200 bg-forest-50/70 p-4 sm:flex-row sm:items-center">
+              <p className="flex-1 text-sm text-forest-900">
+                You freed up {formatMinutes(freedTime.minutes)} on {freedTime.day}.
+                {currentMilestoneName ? ` Want to get ahead on ${currentMilestoneName}?` : " Want to use it?"}
+              </p>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  disabled={fillingTime}
+                  onClick={fillFreedTime}
+                  className="rounded-xl bg-forest-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                  style={{ boxShadow: "0 2px 8px rgba(20,60,35,0.18)" }}
+                >
+                  {fillingTime ? "Finding one..." : "+ Add a task"}
+                </button>
+                <button
+                  type="button"
+                  disabled={fillingTime}
+                  onClick={() => setFreedTime(null)}
+                  className="rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 hover:text-stone-800 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                >
+                  Leave it open
                 </button>
               </div>
             </div>
@@ -1056,9 +1279,9 @@ export default function PlanView({
                                       </button>
                                       <button
                                         type="button"
-                                        title="Skip"
-                                        aria-label="Skip task"
-                                        onClick={() => skipTask(dayName, i)}
+                                        title="Remove"
+                                        aria-label="Remove task"
+                                        onClick={() => removeTask(dayName, i)}
                                         className={`${taskIconButtonClasses} hover:bg-red-50 hover:text-summit`}
                                       >
                                         <span className="text-[10px]">✕</span>
@@ -1090,8 +1313,25 @@ export default function PlanView({
                                             if (e.key === "Escape") setEditingTask(null);
                                           }}
                                           placeholder="Duration"
-                                          className="w-20 text-[10px] text-stone-500 bg-[#F6F6F6] rounded-lg px-2 py-1 border border-[#ECECEC] focus:outline-none focus:border-forest-400 transition-colors duration-200"
+                                          className="w-[4.5rem] text-[10px] text-stone-500 bg-[#F6F6F6] rounded-lg px-2 py-1 border border-[#ECECEC] focus:outline-none focus:border-forest-400 transition-colors duration-200"
                                         />
+                                        {/* Reschedule inline — no AI, no explaining why */}
+                                        <select
+                                          value={editDraft.day}
+                                          onChange={(e) => setEditDraft((d) => ({ ...d, day: e.target.value }))}
+                                          aria-label="Day"
+                                          className="min-w-0 flex-1 text-[10px] text-stone-500 bg-[#F6F6F6] rounded-lg px-1.5 py-1 border border-[#ECECEC] focus:outline-none focus:border-forest-400 transition-colors duration-200"
+                                        >
+                                          {WEEK_DAYS.filter(
+                                            (d) => !plan.plan.schedule?.find((s) => s.day === d)?.finished
+                                          ).map((d) => (
+                                            <option key={d} value={d}>
+                                              {d.slice(0, 3)}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
                                         <button
                                           type="button"
                                           onClick={commitEditTask}

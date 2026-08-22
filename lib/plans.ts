@@ -81,6 +81,39 @@ export function activeHistory(rows: PlanRow[], limit?: number): PlanRow[] {
   return limit ? active.slice(0, limit) : active;
 }
 
+export const WEEK_DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+// Durations are free-text from the model ("30 min", "1 hour", "20–25 min",
+// "40 min (total)"), so this is deliberately forgiving — it only needs to be
+// good enough to tell the user roughly how much time they just freed up.
+export function parseDurationMinutes(text?: string): number {
+  if (!text) return 0;
+  const t = text.toLowerCase();
+  let total = 0;
+  const hours = t.match(/(\d+(?:\.\d+)?)\s*(?:h\b|hr|hour)/);
+  if (hours) total += parseFloat(hours[1]) * 60;
+  const mins = t.match(/(\d+)\s*(?:m\b|min)/);
+  if (mins) total += parseInt(mins[1], 10);
+  if (total) return Math.round(total);
+  const bare = t.match(/\d+/);
+  return bare ? parseInt(bare[0], 10) : 0;
+}
+
+export function formatMinutes(mins: number): string {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
 export interface PlanDiff {
   added: { day: string; task: string }[];
   removed: { day: string; task: string }[];

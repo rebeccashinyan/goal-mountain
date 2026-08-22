@@ -225,13 +225,21 @@ Two selection rules every consumer must follow:
 
 Only an active plan can produce daily tracking, done/missed statuses, "not logged" days, progress logs, daily check-ins, or a week reflection.
 
-### Three ways a plan changes
+### Interaction hierarchy — how a plan changes
 
-| Situation | Mechanism | Result |
-|-----------|-----------|--------|
-| Week is still a **draft** | quick-action chip / guide request → `POST /api/plan/steer` | applied immediately (undo toast) — nothing was committed yet |
-| Week is **active**, whole-week replan | quick-action chip / guide request → `POST /api/plan/steer` | stored as `plan.pending_revision`; live schedule untouched until the user resolves it via `POST /api/plan/revision` |
-| Any unfinished day, **single task** | inline Edit / Replace / Skip / Add | applied immediately (undo toast) — direct manipulation is the point; a review gate here would reintroduce the friction the inline controls remove |
+One rule decides which tier a change belongs to: **how big is the thing being changed, and does the AI rewrite work the user didn't ask it to touch?**
+
+| Tier | Situation | Mechanism | Result |
+|------|-----------|-----------|--------|
+| 1. Direct manipulation | One task is wrong | inline **Edit / Replace / Remove**, `+ Add task` | Applies **immediately** with an undo toast. Edit changes text, duration **and day** with no AI call at all. A review gate here would reintroduce the friction these controls exist to remove. |
+| 2. Simple whole-plan preference | The whole week needs a nudge | **Make it lighter**, **Change strategy**, **Change my availability** (and `Regenerate` in the `···` menu) → `POST /api/plan/steer` | **Always previews.** Stored as `plan.pending_revision`; the live schedule is untouched until resolved via `POST /api/plan/revision`. Applies to drafts as well as active weeks. |
+| 3. Complex reasoning / new context | The user has something to explain ("I don't want to find a niche first, I want to test the market with three projects") | **Discuss with AI** → guide `propose_plan` → same `/api/plan/steer` endpoint with `action: "custom"` | Same preview-then-apply path as tier 2. |
+
+Tier 2 previews on drafts too: a draft the user has already hand-tuned is *their* plan, and an AI rewrite of it deserves the same "see it before it lands" treatment as an active week.
+
+**Regenerate is deliberately demoted** out of the chip row into a `···` overflow menu, labelled with what it costs ("Replaces every remaining task, including ones you like"). Re-rolling the whole week discards parts the user may already be happy with, so targeted change is always the more prominent path.
+
+**Contextual follow-on (`POST /api/plan/fill-time`):** when a tier-1 edit *shortens* or *removes* a task by ≥10 minutes, the freed time is offered back — "You freed up 20 min on Tuesday. Want to get ahead on {current camp}?" with `+ Add a task` / `Leave it open`. Only on click does it call the AI for one concrete execution task sized to the freed time and scoped to the **current** camp (never pulled forward from a later one). It applies inline with undo, so it stays in tier 1. Durations are parsed with `parseDurationMinutes()` from `lib/plans.ts`, which tolerates the free-text the model produces ("1 hr", "20–25 min", "40 min (total)").
 
 **Note on generation timing:** there is no scheduler in this project, so next-week drafts are not auto-generated at rollover — the user triggers generation, which (as before) runs auto-reflection first, then produces the draft. The rollover chain is preserved; only the trigger is manual.
 
@@ -278,32 +286,33 @@ Only an active plan can produce daily tracking, done/missed statuses, "not logge
 3. Unlabeled tasks become missed, day locks (`finished: true`), one log written via Progress Tracking Agent (`data.source: "daily_checkin"`, with `completed`, `missed`, `load_feel`)
 4. All done (and load not "heavier") → "Day complete" celebration, no conversation. Tasks missed OR load felt heavier → the `MiniGuideChat` panel opens on the overview page itself: a "Daily check-in — {day}" `guide_chats` row is created and the guide asks what got in the way (or, on a clean-but-heavy day, one light "which task ran long?" question), stores reasons as memories, and can propose a plan adjustment. The panel's expand icon opens the same conversation in the full AI Guide (`/guide?mountain_id=…&chat_id=…`).
 
-**Quick-action steering — `POST /api/plan/steer`:** one-click plan reactions, no chat round-trip. Sits above the schedule on both draft and active weeks (whenever the viewed week has an unfinished day). The guide's `propose_plan` action routes here too, so conversational replanning gets the same review semantics.
+**Quick-action steering — `POST /api/plan/steer`:** one-click plan reactions, no chat round-trip. Sits above the schedule on both draft and active weeks (whenever the viewed week has an unfinished day and no revision already pending). The guide's `propose_plan` action routes here too, so conversational replanning gets the same review semantics.
 
 **Input:**
 ```json
 {
   "plan_id": "uuid",
   "mountain_id": "uuid",
-  "action": "lighter | different_approach | regenerate | availability | custom",
+  "action": "lighter | strategy | regenerate | availability | custom",
   "available_time": "optional — mainly for action: \"availability\"",
-  "instruction": "required for action: \"custom\" — free-form ask from the guide conversation"
+  "instruction": "required for \"strategy\" (the chosen strategy label) and \"custom\" (free-form ask from the guide)"
 }
 ```
 
 **Behavior:** loads the plan and mountain, splits the schedule into finished (locked, untouched) and open days, and asks the model to revise only the open days per the action's instruction. The prompt requires unchanged tasks to be returned with their **exact original text** — otherwise harmless rewording shows up in the diff as mass remove+add — and forbids splitting one task into several (which would *increase* load when the user asked for less).
 
-Then it branches on the plan's status:
-- **draft** → applies immediately, returns `mode: "applied"`
-- **active** → computes a diff and stores it as `plan.pending_revision`; the live schedule is untouched. Returns `mode: "revision"` with the diff.
-- no actual difference → `mode: "unchanged"`, nothing written
+It then **always proposes, never applies** — draft or active alike. It computes a diff and stores it as `plan.pending_revision`, leaving the live schedule untouched, and returns `mode: "revision"` with the diff. If the model produced no actual difference it returns `mode: "unchanged"` and writes nothing.
 
 **Output:** the updated `weekly_plans` row plus `mode`, `note` (one-sentence user-facing summary), and `diff` when a revision was created.
 
-**Preference learning:** every steer writes a `preference` memory naming the signal ("Asked the AI to lighten a weekly plan — may prefer a lower task load than proposed"). Repeating the same steer touches `updated_at` on the existing row rather than inserting a duplicate, so a strengthening signal doesn't flood the memory table.
+**Preference learning:** every steer writes a `preference` memory naming the signal ("Asked the AI to lighten a weekly plan — may prefer a lower task load than proposed"; for a strategy, the chosen label). Repeating the same steer touches `updated_at` on the existing row rather than inserting a duplicate, so a strengthening signal doesn't flood the memory table.
 
 **DB reads:** `weekly_plans` (the plan being steered), `mountains`, `memory`  
 **DB writes:** `weekly_plans`, `memory` (preference)
+
+**Strategy options — `POST /api/plan/strategies`:** `{ plan_id, mountain_id }` → `{ strategies: [{ label, detail }] }`, 2-3 of them. Backs the **Change strategy** chip: rather than re-rolling the week and hoping, it names concrete directions the user can recognise — "Begin outreach and offer testing", "Focus on 2 polished portfolio pieces" — each grounded in the tasks actually in this plan, each meaningfully different from the others and from what the plan already does. Picking one calls `/steer` with `action: "strategy"`; "Something else…" hands off to Discuss with AI. Read-only (reads `weekly_plans`, `mountains`, `memory`; writes nothing).
+
+**Freed-time fill — `POST /api/plan/fill-time`:** `{ plan_id, mountain_id, day, minutes }` → `{ task }`. One task, scoped to the current camp, biased to execution over setup/admin/research, capped at one short sentence, sized to the time freed. Reads `weekly_plans`, `mountains`; writes nothing (the client inserts it via `PATCH /api/plan`).
 
 **Resolving a revision — `POST /api/plan/revision`:** `{ plan_id, decision: "apply" | "discard" }`. No AI call — the revision was already generated by `/steer`.
 - `discard` → drops `pending_revision`, current plan stands
@@ -328,7 +337,7 @@ The merge is re-computed against the plan's **current** schedule at apply time, 
 
 **Output:** `{ "alternatives": [{ "task": "...", "duration": "...", "priority": "..." }] }` — `mode: "initial"` returns 2 (one more hands-on, one smaller/lower-effort); `mode: "more"` (the "Something else" follow-up) returns 1 further alternative distinct from `exclude`. The frontend applies a chosen alternative via the existing `PATCH /api/plan`; this route itself is stateless (no DB write).
 
-Picking an alternative also writes a `preference` memory naming the swap (old task → chosen task) — which framing of the same work they reached for is a genuine preference signal. Plain Edit and Skip do not write memories: an edit is the user's own wording (nothing generalizable), and a bare skip doesn't say *why*, so both would add noise without adding signal.
+**Preference signals from direct manipulation:** picking an alternative writes a `preference` memory naming the swap (old task → chosen task), and **Remove** writes one naming the removed task — what they cut is as informative as what they pick. Plain **Edit** does not write a memory: it's the user's own wording of the same work, with nothing generalizable to learn. All of these feed the Planning Agent, which reads the `preference` category alongside motivation/obstacle/behavior_pattern.
 
 **DB reads:** `mountains`  
 **DB writes:** none (the client writes the `preference` memory via `POST /api/memory`)

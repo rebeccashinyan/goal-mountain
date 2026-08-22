@@ -93,7 +93,7 @@ Planning + Strategy Agent output. One row per planning session (multiple per mou
 | `focus_area`, `difficulty_level` | From the Planning Agent |
 | `status` | `"draft"` \| `"active"`. **Every** generated week starts as `"draft"`; "Start this week" flips it to `"active"`. Rows predating this lifecycle have no `status` — those count as legacy active plans (anything not explicitly `"draft"` is active) |
 | `what_changed` | Short phrases describing how this week adapted to the last one. Populated from the second week onward; empty on a first week |
-| `pending_revision` | `{ schedule, focus_area, priority_recommendation, note, diff, created_at }` — a proposed mid-week change awaiting the user's decision. Present only on active weeks, and cleared by `POST /api/plan/revision` |
+| `pending_revision` | `{ schedule, focus_area, priority_recommendation, note, diff, created_at }` — a proposed whole-plan change awaiting the user's decision. Written by `/api/plan/steer` on **drafts and active weeks alike**, and cleared by `POST /api/plan/revision`. While present, the live `schedule` is authoritative and untouched |
 
 **Notes:**
 - **`week_start` is not unique.** Regenerating a draft inserts another row for the same week, so the *effective* plan for a week is the **newest row for that `week_start`** — never simply the newest row overall, which may be a next-week draft the user hasn't accepted.
@@ -249,8 +249,10 @@ All child rows are deleted when a mountain is deleted (ON DELETE CASCADE).
 | POST | `/api/plan` | weekly_plans (always as a draft) | mountains, weekly_plans, progress_logs, memory |
 | PATCH | `/api/plan` | weekly_plans (plan jsonb, optionally priority_recommendation) | — |
 | GET | `/api/plan` | — | weekly_plans |
-| POST | `/api/plan/steer` | weekly_plans (applies on a draft, proposes on an active week), memory (preference) | weekly_plans, mountains, memory |
+| POST | `/api/plan/steer` | weekly_plans (always as a pending revision), memory (preference) | weekly_plans, mountains, memory |
 | POST | `/api/plan/revision` | weekly_plans (apply/discard a pending revision) | weekly_plans |
+| POST | `/api/plan/strategies` | — | weekly_plans, mountains, memory |
+| POST | `/api/plan/fill-time` | — | weekly_plans, mountains |
 | POST | `/api/plan/replace-task` | — | mountains |
 | POST | `/api/track-progress` | progress_logs, mountains | mountains, progress_logs |
 | GET | `/api/track-progress` | — | progress_logs |

@@ -13,7 +13,7 @@ import {
 } from "@/lib/plans";
 
 type TaskStatus = "done" | "missed";
-type SteerAction = "lighter" | "strategy" | "regenerate" | "availability";
+type SteerAction = "lighter" | "strategy" | "regenerate" | "availability" | "custom";
 
 interface StrategyOption {
   label: string;
@@ -152,9 +152,32 @@ export default function PlanView({
   // Per-task Edit / Replace / Remove
   const [editingTask, setEditingTask] = useState<{ day: string; index: number } | null>(null);
   const [editDraft, setEditDraft] = useState({ task: "", duration: "", day: "" });
+
+  // Replace: a two-step AI-assisted flow — pick a direction (or type one),
+  // preview the concrete task it becomes, then confirm. Never applies on
+  // click, and never touches any task but this one.
   const [replacingTask, setReplacingTask] = useState<{ day: string; index: number } | null>(null);
-  const [alternatives, setAlternatives] = useState<{ task: string; duration: string; priority: string }[]>([]);
-  const [altLoading, setAltLoading] = useState(false);
+  const [replaceStep, setReplaceStep] = useState<"directions" | "custom" | "preview">("directions");
+  const [replaceDirections, setReplaceDirections] = useState<string[]>([]);
+  const [replaceDirectionsLoading, setReplaceDirectionsLoading] = useState(false);
+  const [customDirectionInput, setCustomDirectionInput] = useState("");
+  const [generatingReplacement, setGeneratingReplacement] = useState(false);
+  const [replacePreview, setReplacePreview] = useState<{
+    task: string;
+    duration: string;
+    priority: string;
+    direction: string;
+    affected: { day: string; task: string }[];
+  } | null>(null);
+  // Set once a replacement is confirmed if it makes other tasks elsewhere
+  // in the plan inconsistent — offered as a review, never applied silently.
+  const [taskImpact, setTaskImpact] = useState<{
+    day: string;
+    originalTask: string;
+    newTask: string;
+    direction: string;
+    affected: { day: string; task: string }[];
+  } | null>(null);
 
   // One-step undo for AI steering + skip/replace actions
   const [undoToast, setUndoToast] = useState<{ message: string; previousPlan: PlanData } | null>(null);
@@ -498,78 +521,140 @@ export default function PlanView({
     }).catch(() => {});
   }
 
+  // Step 1: read the task in context (goal, camp, rest of the week) and
+  // propose 2-3 concrete alternative directions — not finished tasks yet.
   async function openReplace(dayName: string, index: number, task: Task) {
+    if (!plan) return;
     setEditingTask(null);
     setReplacingTask({ day: dayName, index });
-    setAlternatives([]);
-    setAltLoading(true);
+    setReplaceStep("directions");
+    setReplaceDirections([]);
+    setReplacePreview(null);
+    setCustomDirectionInput("");
+    setReplaceDirectionsLoading(true);
     try {
       const res = await fetch("/api/plan/replace-task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          plan_id: plan.id,
           mountain_id: mountainId,
           task: { task: task.task, duration: task.duration, priority: task.priority },
-          mode: "initial",
+          day: dayName,
+          mode: "directions",
         }),
       });
       if (res.ok) {
         const data = await res.json();
-        setAlternatives(data.alternatives || []);
+        setReplaceDirections(data.directions || []);
       }
     } finally {
-      setAltLoading(false);
+      setReplaceDirectionsLoading(false);
     }
   }
 
-  async function loadMoreAlternative(task: Task) {
-    if (altLoading) return;
-    setAltLoading(true);
+  // Step 2: turn the chosen direction (AI-suggested or the user's own
+  // typed text) into one concrete task, shown as a preview — nothing is
+  // applied until "Replace task" is pressed.
+  async function chooseDirection(dayName: string, task: Task, direction: string) {
+    if (!plan || generatingReplacement) return;
+    setGeneratingReplacement(true);
     try {
       const res = await fetch("/api/plan/replace-task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          plan_id: plan.id,
           mountain_id: mountainId,
           task: { task: task.task, duration: task.duration, priority: task.priority },
-          mode: "more",
-          exclude: [task.task, ...alternatives.map((a) => a.task)],
+          day: dayName,
+          mode: "generate",
+          direction,
         }),
       });
       if (res.ok) {
         const data = await res.json();
-        setAlternatives((prev) => [...prev, ...(data.alternatives || [])]);
+        setReplacePreview({
+          task: data.replacement?.task || task.task,
+          duration: data.replacement?.duration || task.duration,
+          priority: data.replacement?.priority || task.priority,
+          direction,
+          affected: data.affected || [],
+        });
+        setReplaceStep("preview");
       }
     } finally {
-      setAltLoading(false);
+      setGeneratingReplacement(false);
     }
   }
 
-  function applyAlternative(dayName: string, index: number, alt: { task: string; duration: string; priority: string }) {
-    if (!plan?.plan.schedule) return;
+  function submitCustomDirection(dayName: string, task: Task) {
+    const text = customDirectionInput.trim();
+    if (!text) return;
+    chooseDirection(dayName, task, text);
+  }
+
+  function closeReplace() {
+    setReplacingTask(null);
+    setReplaceStep("directions");
+    setReplaceDirections([]);
+    setReplacePreview(null);
+    setCustomDirectionInput("");
+  }
+
+  // Step 3: commit the previewed task. Only this one task changes — no
+  // other day is touched here, regardless of what "affected" flagged.
+  function confirmReplace(dayName: string, index: number) {
+    if (!plan?.plan.schedule || !replacePreview) return;
     const previousPlan = plan;
     const original = plan.plan.schedule.find((d) => d.day === dayName)?.tasks[index];
     const schedule = plan.plan.schedule.map((d) => {
       if (d.day !== dayName) return d;
-      const tasks = d.tasks.map((t, i) => (i === index ? { task: alt.task, duration: alt.duration, priority: alt.priority } : t));
+      const tasks = d.tasks.map((t, i) =>
+        i === index
+          ? { task: replacePreview.task, duration: replacePreview.duration, priority: replacePreview.priority }
+          : t
+      );
       return { ...d, tasks };
     });
     updatePlanJson({ ...plan, plan: { ...plan.plan, schedule } });
 
-    // Which alternative they reached for is a preference signal worth
-    // keeping — it's a choice between framings of the same work.
+    // Which direction they chose is a preference signal worth keeping —
+    // it's a real decision between framings of the same work.
     if (original) {
       recordPreference(
-        `Swapped the planned task "${original.task.slice(0, 90)}" for "${alt.task.slice(0, 90)}"`,
+        `Swapped the planned task "${original.task.slice(0, 90)}" for "${replacePreview.task.slice(0, 90)}" — chose to ${replacePreview.direction.slice(0, 80)}`,
         "task_replace"
       );
-      const freed = parseDurationMinutes(original.duration) - parseDurationMinutes(alt.duration);
+      const freed = parseDurationMinutes(original.duration) - parseDurationMinutes(replacePreview.duration);
       if (freed >= 10) setFreedTime({ day: dayName, minutes: freed });
     }
 
     showUndoToast("Task updated", previousPlan);
-    setReplacingTask(null);
-    setAlternatives([]);
+
+    // Other tasks the new direction makes inconsistent are only ever
+    // offered for review — never changed as a side effect of this replace.
+    if (original && replacePreview.affected.length) {
+      setTaskImpact({
+        day: dayName,
+        originalTask: original.task,
+        newTask: replacePreview.task,
+        direction: replacePreview.direction,
+        affected: replacePreview.affected,
+      });
+    }
+
+    closeReplace();
+  }
+
+  // "Review changes" on the impact banner routes through the same steer
+  // endpoint as the quick-action chips, scoped to only the flagged tasks —
+  // so it previews as the familiar revision card, never applies blind.
+  function reviewTaskImpact() {
+    if (!taskImpact) return;
+    const instruction = `The user just replaced the task "${taskImpact.originalTask}" with "${taskImpact.newTask}" because they chose to ${taskImpact.direction}. Update ONLY these specific tasks to stay consistent with that change — leave every other task on these days exactly as it is, character for character: ${JSON.stringify(taskImpact.affected)}`;
+    runSteerAction("custom", { instruction });
+    setTaskImpact(null);
   }
 
   function setTaskStatus(dayName: string, taskIndex: number, status: TaskStatus | undefined) {
@@ -1127,6 +1212,39 @@ export default function PlanView({
             </div>
           )}
 
+          {/* A single-task Replace can make other tasks elsewhere in the
+              plan inconsistent (e.g. dropping outsourcing tasks after
+              choosing to build something yourself). Only ever offered as a
+              review — those tasks are never touched by the replace itself. */}
+          {taskImpact && !revision && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:flex-row sm:items-center">
+              <p className="flex-1 text-sm text-stone-700">
+                This choice also affects {taskImpact.affected.length}{" "}
+                later task{taskImpact.affected.length === 1 ? "" : "s"}. Update{" "}
+                {taskImpact.affected.length === 1 ? "it" : "them"} too?
+              </p>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  disabled={!!steering}
+                  onClick={reviewTaskImpact}
+                  className="rounded-xl bg-forest-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                  style={{ boxShadow: "0 2px 8px rgba(20,60,35,0.18)" }}
+                >
+                  Review changes
+                </button>
+                <button
+                  type="button"
+                  disabled={!!steering}
+                  onClick={() => setTaskImpact(null)}
+                  className="rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 hover:text-stone-800 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Priority */}
           <div
             className="rounded-2xl border border-[#ECECEC] bg-white p-5"
@@ -1471,47 +1589,109 @@ export default function PlanView({
                                 {isReplacingThis && (
                                   <div className="mt-1.5 rounded-xl border border-forest-200 bg-forest-50/60 p-2 space-y-1.5">
                                     <p className="text-[10px] font-semibold text-forest-700 uppercase tracking-wide">
-                                      Swap this for...
+                                      {replaceStep === "preview" ? "Preview replacement" : "Replace with..."}
                                     </p>
-                                    {altLoading && alternatives.length === 0 ? (
+
+                                    {replaceStep === "preview" && replacePreview ? (
+                                      <>
+                                        <div className="rounded-lg border border-forest-300 bg-white p-2">
+                                          <p className="text-[11px] font-medium text-stone-700 leading-relaxed">
+                                            {replacePreview.task}
+                                          </p>
+                                          <p className="mt-1 text-[10px] text-stone-400">{replacePreview.duration}</p>
+                                        </div>
+                                        <div className="flex items-center gap-2 pt-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => confirmReplace(dayName, i)}
+                                            className="text-[10px] font-semibold px-2.5 py-1.5 rounded-md bg-forest-700 text-white hover:bg-forest-600 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                                          >
+                                            Replace task
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setReplaceStep("directions")}
+                                            className="text-[10px] font-medium text-stone-400 hover:text-stone-600 transition-colors duration-200"
+                                          >
+                                            Back
+                                          </button>
+                                        </div>
+                                      </>
+                                    ) : generatingReplacement ? (
                                       <div className="flex items-center gap-1.5 py-1">
                                         <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
                                         <span className="text-[10px] text-stone-400">Thinking...</span>
                                       </div>
-                                    ) : (
-                                      <div className="space-y-1">
-                                        {alternatives.map((alt, ai) => (
+                                    ) : replaceStep === "custom" ? (
+                                      <div className="space-y-1.5">
+                                        <label className="block text-[10px] font-medium text-stone-500">
+                                          What would you rather do?
+                                        </label>
+                                        <input
+                                          type="text"
+                                          autoFocus
+                                          value={customDirectionInput}
+                                          onChange={(e) => setCustomDirectionInput(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") submitCustomDirection(dayName, task);
+                                            if (e.key === "Escape") setReplaceStep("directions");
+                                          }}
+                                          placeholder="e.g. I want to build it myself, not hire anyone"
+                                          className="w-full text-[11px] bg-white rounded-lg px-2 py-1.5 border border-[#ECECEC] focus:outline-none focus:border-forest-400 focus:ring-2 focus:ring-forest-200 transition-colors duration-200"
+                                        />
+                                        <div className="flex items-center gap-2">
                                           <button
-                                            key={ai}
                                             type="button"
-                                            onClick={() => applyAlternative(dayName, i, alt)}
-                                            className="block w-full text-left text-[11px] font-medium text-stone-700 bg-white rounded-lg px-2 py-1.5 border border-[#ECECEC] hover:border-forest-300 hover:bg-forest-50 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                                            disabled={!customDirectionInput.trim()}
+                                            onClick={() => submitCustomDirection(dayName, task)}
+                                            className="text-[10px] font-semibold px-2.5 py-1.5 rounded-md bg-forest-700 text-white hover:bg-forest-600 disabled:opacity-40 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
                                           >
-                                            {alt.task} <span className="text-stone-400">({alt.duration})</span>
+                                            Continue
                                           </button>
-                                        ))}
+                                          <button
+                                            type="button"
+                                            onClick={() => setReplaceStep("directions")}
+                                            className="text-[10px] font-medium text-stone-400 hover:text-stone-600 transition-colors duration-200"
+                                          >
+                                            Back
+                                          </button>
+                                        </div>
                                       </div>
+                                    ) : replaceDirectionsLoading ? (
+                                      <div className="flex items-center gap-1.5 py-1">
+                                        <span className="w-3 h-3 border-2 border-forest-200 border-t-forest-600 rounded-full animate-spin" />
+                                        <span className="text-[10px] text-stone-400">Reading this task...</span>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <div className="space-y-1">
+                                          {replaceDirections.map((direction, di) => (
+                                            <button
+                                              key={di}
+                                              type="button"
+                                              onClick={() => chooseDirection(dayName, task, direction)}
+                                              className="block w-full text-left text-[11px] font-medium text-stone-700 bg-white rounded-lg px-2 py-1.5 border border-[#ECECEC] hover:border-forest-300 hover:bg-forest-50 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                                            >
+                                              {direction}
+                                            </button>
+                                          ))}
+                                          <button
+                                            type="button"
+                                            onClick={() => setReplaceStep("custom")}
+                                            className="block w-full text-left text-[11px] font-medium text-stone-500 bg-white rounded-lg px-2 py-1.5 border border-dashed border-stone-300 hover:border-forest-300 hover:text-forest-700 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                                          >
+                                            Something else…
+                                          </button>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={closeReplace}
+                                          className="text-[10px] font-medium text-stone-400 hover:text-stone-600 pt-0.5 transition-colors duration-200"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </>
                                     )}
-                                    <div className="flex items-center gap-2 pt-0.5">
-                                      <button
-                                        type="button"
-                                        disabled={altLoading}
-                                        onClick={() => loadMoreAlternative(task)}
-                                        className="text-[10px] font-semibold text-forest-700 hover:underline disabled:opacity-40 transition-colors duration-200"
-                                      >
-                                        {altLoading && alternatives.length > 0 ? "Thinking..." : "Something else"}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setReplacingTask(null);
-                                          setAlternatives([]);
-                                        }}
-                                        className="text-[10px] font-medium text-stone-400 hover:text-stone-600 transition-colors duration-200"
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
                                   </div>
                                 )}
                               </div>

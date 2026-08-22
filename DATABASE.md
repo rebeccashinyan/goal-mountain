@@ -101,7 +101,7 @@ Planning + Strategy Agent output. One row per planning session (multiple per mou
 - **Only active plans are behavioural evidence.** The Planning, Reflection, Guide, and Proactive agents filter to active plans before reading history; a draft the user never started must never be interpreted as tasks they missed. Both rules live in [lib/plans.ts](lib/plans.ts) (`effectivePlans()`, `activeHistory()`) — use them rather than re-deriving the filter.
 - Only an active plan can produce daily tracking, progress logs, daily check-ins, or a week reflection.
 - **`schedule` may cover fewer than 7 days.** A day before `plan_start_date` was never generated for — it's not a rest day, not "not logged", it simply isn't part of this plan. `PlanView` renders it as a muted "Before this plan" column instead of a trackable one.
-- `POST /api/plan/steer` (quick actions + guide requests), `POST /api/plan/revision` (apply/discard a proposed change), and `POST /api/plan/replace-task` (per-task swap suggestions) are companions to `POST /api/plan` — see AGENTS.md → Planning + Strategy Agent. None of them insert rows: `steer` and `revision` update the existing plan in place, and `replace-task` is stateless.
+- `POST /api/plan/steer` (quick actions + guide requests), `POST /api/plan/revision` (apply/discard a proposed change), and `POST /api/plan/replace-task` (the two-step AI-assisted single-task Replace flow — directions, then a concrete task) are companions to `POST /api/plan` — see AGENTS.md → Planning + Strategy Agent. None of them insert rows: `steer` and `revision` update the existing plan in place, and `replace-task` is stateless (it reads `weekly_plans` by `plan_id` for schedule context, but the client applies the confirmed replacement via `PATCH /api/plan`).
 
 ---
 
@@ -255,7 +255,7 @@ All child rows are deleted when a mountain is deleted (ON DELETE CASCADE).
 | POST | `/api/plan/revision` | weekly_plans (apply/discard a pending revision) | weekly_plans |
 | POST | `/api/plan/strategies` | — | weekly_plans, mountains, memory |
 | POST | `/api/plan/fill-time` | — | weekly_plans, mountains |
-| POST | `/api/plan/replace-task` | — | mountains |
+| POST | `/api/plan/replace-task` | — | mountains, weekly_plans |
 | POST | `/api/track-progress` | progress_logs, mountains | mountains, progress_logs |
 | GET | `/api/track-progress` | — | progress_logs |
 | POST | `/api/reflect` | reflections, memory | mountains, reflections, progress_logs, memory |

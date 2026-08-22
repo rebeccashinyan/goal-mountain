@@ -1,15 +1,29 @@
 import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
+import type { PlanDay } from "@/lib/plans";
 
-// Inline task swap: given one task, returns AI-generated alternatives for
-// direct-manipulation replacement (no chat round-trip). "initial" returns
-// a hands-on variant and a smaller/lower-effort variant; "more" (the
-// "Something else" follow-up) returns one further, different option.
+// Two-step AI-assisted replacement for a single task — no chat round-trip,
+// and never touches any task but the one being replaced:
+//
+// 1. mode: "directions" — read the task in context (goal, current camp,
+//    rest of the week) to understand what it was actually FOR, then
+//    propose 2-3 concrete alternative directions. Not finished tasks yet —
+//    a menu the user picks from (or types their own).
+// 2. mode: "generate" — turn the chosen direction (AI-suggested or typed
+//    by the user) into one concrete task, and flag any OTHER tasks already
+//    in the plan that the direction makes inconsistent, so the caller can
+//    offer a review rather than changing them silently.
 export async function POST(request: Request) {
-  const { mountain_id, task, mode = "initial", exclude } = await request.json();
+  const { plan_id, mountain_id, task, day, mode, direction } = await request.json();
 
-  if (!mountain_id || !task?.task) {
-    return Response.json({ error: "mountain_id and task are required" }, { status: 400 });
+  if (!plan_id || !mountain_id || !task?.task || !day || !mode) {
+    return Response.json(
+      { error: "plan_id, mountain_id, task, day, and mode are required" },
+      { status: 400 }
+    );
+  }
+  if (mode === "generate" && !direction?.trim()) {
+    return Response.json({ error: 'direction is required for mode: "generate"' }, { status: 400 });
   }
 
   const { data: mountain, error: mountainError } = await supabase
@@ -22,44 +36,104 @@ export async function POST(request: Request) {
     return Response.json({ error: "Mountain not found" }, { status: 404 });
   }
 
-  const currentMilestone = mountain.milestones[mountain.current_milestone_index];
+  const { data: planRow, error: planError } = await supabase
+    .from("weekly_plans")
+    .select("plan")
+    .eq("id", plan_id)
+    .single();
 
-  const instruction =
-    mode === "more"
-      ? "Suggest exactly 1 alternative task — a genuinely different way to spend this same time slot toward the same goal, distinct from anything already suggested. Not specifically a hands-on or smaller variant, just a different angle."
-      : "Suggest exactly 2 alternative tasks for this same time slot: one that is a more hands-on/practical version of the original, and one that is a smaller/lower-effort version of the original.";
+  if (planError || !planRow) {
+    return Response.json({ error: "Plan not found" }, { status: 404 });
+  }
+
+  const schedule: PlanDay[] = (planRow.plan?.schedule || []) as PlanDay[];
+  const otherTasks = schedule.flatMap((d) =>
+    (d.tasks || [])
+      .filter((t) => !(d.day === day && t.task === task.task))
+      .map((t) => ({ day: d.day, task: t.task }))
+  );
+
+  const currentMilestone = mountain.milestones[mountain.current_milestone_index];
+  const sharedContext = `Goal: ${mountain.goal}
+Summit: ${mountain.summit}
+Current camp: ${currentMilestone?.name || "Getting started"}`;
 
   const completion = await openai.chat.completions.create({
     model: "gpt-5-mini",
     response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `You are the Planning + Strategy Agent for Goal Mountain, replacing a single task in a weekly plan with alternatives the user can pick from in place — no conversation, just direct swap options.
+    messages:
+      mode === "directions"
+        ? [
+            {
+              role: "system",
+              content: `You are the Planning + Strategy Agent for Goal Mountain. The user doesn't want to do one task as written and wants a different direction for it — this is a quick menu of concrete alternatives, not a conversation.
 
-${instruction}
+First understand what the task is actually FOR (e.g. "compare DIY CAD vs hiring a freelancer" is really about deciding how to get a 3D model made). Then propose 2-3 concrete, meaningfully different directions the user could take instead.
 
-Keep each alternative's duration close to the original unless the variant specifically calls for shorter (the "smaller" version should be shorter).
-Be specific: "Complete chapter 3 exercises" not "Study more".
+Return a JSON object: { "directions": ["...", "...", "..."] }
 
-Return a JSON object: { "alternatives": [ { "task": "...", "duration": "...", "priority": "high|medium|low" } ] }`,
-      },
-      {
-        role: "user",
-        content: `Goal: ${mountain.goal}
-Summit: ${mountain.summit}
-Current camp: ${currentMilestone?.name || "Getting started"}
-Original task: ${task.task} (${task.duration}, priority: ${task.priority})
-${exclude?.length ? `Already suggested, don't repeat: ${JSON.stringify(exclude)}` : ""}`,
-      },
-    ],
+Rules:
+- 2 to 3 directions, never more or fewer
+- Each must be genuinely different from the others — not reworded restatements of the same idea
+- Short phrases (4-8 words) naming a real path forward — this is a menu, not finished tasks yet
+- Don't suggest a direction that duplicates another task already elsewhere in this week's plan`,
+            },
+            {
+              role: "user",
+              content: `${sharedContext}
+Task to replace: "${task.task}" (${task.duration}, priority: ${task.priority}), on ${day}
+${otherTasks.length ? `\nRest of this week's plan (for context — don't duplicate any of these): ${JSON.stringify(otherTasks)}` : ""}`,
+            },
+          ]
+        : [
+            {
+              role: "system",
+              content: `You are the Planning + Strategy Agent for Goal Mountain. The user is replacing one task in their weekly plan with a specific direction they chose (or typed themselves). Turn it into ONE concrete, specific, actionable task with a realistic duration for a single sitting, matching the style of the rest of the plan.
+
+Then check the REST of this week's schedule: does this new direction make any OTHER task inconsistent or redundant (e.g. choosing "build it myself" when the schedule still has a "find a freelancer" task later)? List only genuine conflicts — never just thematic overlap, and never the task being replaced itself.
+
+Return a JSON object:
+{
+  "task": "specific task text",
+  "duration": "e.g. 30 min",
+  "priority": "high|medium|low",
+  "affected": [ { "day": "Tuesday", "task": "exact existing task text, copied verbatim" } ]
+}`,
+            },
+            {
+              role: "user",
+              content: `${sharedContext}
+Task being replaced: "${task.task}" (${task.duration}, priority: ${task.priority}), on ${day}
+Chosen direction: ${direction.trim()}
+${otherTasks.length ? `\nRest of this week's plan: ${JSON.stringify(otherTasks)}` : ""}`,
+            },
+          ],
   });
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {
-    return Response.json({ error: "Failed to generate alternatives" }, { status: 500 });
+    return Response.json({ error: "Failed to generate replacement" }, { status: 500 });
   }
 
   const result = JSON.parse(content);
-  return Response.json({ alternatives: result.alternatives || [] });
+
+  if (mode === "directions") {
+    return Response.json({ directions: (result.directions || []).slice(0, 3) });
+  }
+
+  // Deterministic check — only ever flag tasks that actually exist in this
+  // plan, so "Review changes" can never point at something hallucinated.
+  const affected = (result.affected || []).filter(
+    (a: { day: string; task: string }) =>
+      a?.day && a?.task && otherTasks.some((t) => t.day === a.day && t.task === a.task)
+  );
+
+  return Response.json({
+    replacement: {
+      task: result.task || task.task,
+      duration: result.duration || task.duration,
+      priority: result.priority || task.priority,
+    },
+    affected,
+  });
 }

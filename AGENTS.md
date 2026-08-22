@@ -231,7 +231,7 @@ One rule decides which tier a change belongs to: **how big is the thing being ch
 
 | Tier | Situation | Mechanism | Result |
 |------|-----------|-----------|--------|
-| 1. Direct manipulation | One task is wrong | inline **Edit / Replace / Remove**, `+ Add task` | Applies **immediately** with an undo toast. Edit changes text, duration **and day** with no AI call at all. A review gate here would reintroduce the friction these controls exist to remove. |
+| 1. Direct manipulation | One task is wrong | inline **Edit / Replace / Remove**, `+ Add task` | Still scoped to one task, never a chat, never a whole-plan rewrite. Edit and Remove apply **immediately** with an undo toast — Edit changes text, duration **and day** with no AI call at all. Replace previews an AI-suggested direction first (see below) and only applies on an explicit "Replace task" confirm, since — unlike Edit — the user hasn't already decided the replacement text themselves. |
 | 2. Simple whole-plan preference | The whole week needs a nudge | **Make it lighter**, **Change strategy**, **Change my availability** (and `Regenerate` in the `···` menu) → `POST /api/plan/steer` | **Always previews.** Stored as `plan.pending_revision`; the live schedule is untouched until resolved via `POST /api/plan/revision`. Applies to drafts as well as active weeks. |
 | 3. Complex reasoning / new context | The user has something to explain ("I don't want to find a niche first, I want to test the market with three projects") | **Discuss with AI** → guide `propose_plan` → same `/api/plan/steer` endpoint with `action: "custom"` | Same preview-then-apply path as tier 2. |
 
@@ -331,24 +331,22 @@ The merge is re-computed against the plan's **current** schedule at apply time, 
 **DB reads:** `weekly_plans`  
 **DB writes:** `weekly_plans`
 
-**Inline task replacement — `POST /api/plan/replace-task`:** per-task direct manipulation (the ↻ Replace icon), no chat round-trip.
+**Inline task replacement — `POST /api/plan/replace-task`:** per-task direct manipulation (the ↻ Replace icon), no chat round-trip. A two-step AI-assisted flow, not a single "swap for a ready task" click — the interaction contract is: **Edit** = the user knows exactly what to change, **Replace** = the AI helps find a different *direction* for this one task, **Remove** = the task isn't needed at all. Replace never opens a chat and never touches any task but the one being replaced.
 
-**Input:**
-```json
-{
-  "mountain_id": "uuid",
-  "task": { "task": "...", "duration": "...", "priority": "high|medium|low" },
-  "mode": "initial | more",
-  "exclude": ["optional — task strings already shown, so \"more\" doesn't repeat them"]
-}
-```
+**Step 1 — `mode: "directions"`:** reads the task in context (goal, current camp, and the rest of the week's schedule, fetched server-side from `plan_id` — not trusted from the client) to understand what the task was actually *for*, then proposes 2-3 concrete, meaningfully different directions. These are short phrases, not finished tasks yet — the frontend appends a fixed **"Something else…"** as a 4th, always-present option that opens a small `What would you rather do?` text input instead of calling the AI again.
 
-**Output:** `{ "alternatives": [{ "task": "...", "duration": "...", "priority": "..." }] }` — `mode: "initial"` returns 2 (one more hands-on, one smaller/lower-effort); `mode: "more"` (the "Something else" follow-up) returns 1 further alternative distinct from `exclude`. The frontend applies a chosen alternative via the existing `PATCH /api/plan`; this route itself is stateless (no DB write).
+**Input:** `{ "plan_id", "mountain_id", "task": { "task", "duration", "priority" }, "day", "mode": "directions" }`
+**Output:** `{ "directions": ["...", "...", "..."] }` (2-3 items)
 
-**Preference signals from direct manipulation:** picking an alternative writes a `preference` memory naming the swap (old task → chosen task), and **Remove** writes one naming the removed task — what they cut is as informative as what they pick. Plain **Edit** does not write a memory: it's the user's own wording of the same work, with nothing generalizable to learn. All of these feed the Planning Agent, which reads the `preference` category alongside motivation/obstacle/behavior_pattern.
+**Step 2 — `mode: "generate"`:** turns the chosen direction — one of the AI's own suggestions, or the user's typed text — into one concrete task (text, duration, priority). It also checks the rest of the week's schedule for tasks the new direction makes genuinely inconsistent (e.g. choosing "print-on-demand" when a "hire a CAD freelancer" task still exists later), returned as `affected`. This is filtered server-side against the plan's actual tasks after the model responds — the same "deterministic backstop over a prompt-only rule" pattern used for mid-week plan generation — so `affected` can never point at something hallucinated.
 
-**DB reads:** `mountains`  
-**DB writes:** none (the client writes the `preference` memory via `POST /api/memory`)
+**Input:** `{ "plan_id", "mountain_id", "task", "day", "mode": "generate", "direction": "..." }`
+**Output:** `{ "replacement": { "task", "duration", "priority" }, "affected": [{ "day", "task" }] }`
+
+The frontend shows the replacement as a **preview** — nothing is written until the user presses **"Replace task"**. Confirming applies only that single task via the existing `PATCH /api/plan` and writes a `preference` memory naming the swap and the chosen direction. If `affected` is non-empty, a banner offers **"This choice also affects N later tasks. Update them too?"** with **Review changes** (routes to `POST /api/plan/steer` with `action: "custom"` and an instruction scoped to exactly those tasks — surfacing as the normal pending-revision review card, same as any tier-2/3 change) and **Not now** (dismisses; those tasks are never changed silently). This route itself is stateless (no DB write) — the client writes the `preference` memory and applies the confirmed task via `PATCH /api/plan`.
+
+**DB reads (this route):** `mountains`, `weekly_plans` (the plan being read for context, by `plan_id`)
+**DB writes (this route):** none
 
 ---
 

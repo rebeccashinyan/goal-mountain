@@ -32,6 +32,11 @@ export interface PlanJson {
   status?: PlanStatus;
   what_changed?: string[];
   pending_revision?: PendingRevision;
+  // The first calendar date (YYYY-MM-DD) this plan covers. Equal to
+  // week_start unless the plan was generated mid-week, in which case it's
+  // today's date at generation time — days before it were never part of
+  // this plan and must render as "Before this plan", not as missed work.
+  plan_start_date?: string;
 }
 
 export interface PendingRevision {

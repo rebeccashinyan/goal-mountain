@@ -45,6 +45,7 @@ interface PlanData {
     status?: "draft" | "active";
     what_changed?: string[];
     pending_revision?: PendingRevision;
+    plan_start_date?: string;
   };
   priority_recommendation: string;
   next_best_action: string;
@@ -1149,6 +1150,33 @@ export default function PlanView({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
                 {WEEK_DAYS.map((dayName) => {
                   const day = plan.plan.schedule?.find((d) => d.day === dayName);
+
+                  // Dates before this plan's own start never had tasks —
+                  // never blank/rest, never trackable. Keeps the 7-column
+                  // grid without implying the user missed something that
+                  // was never asked of them.
+                  const columnDate = addDays(plan.week_start, WEEK_DAYS.indexOf(dayName));
+                  const isBeforePlanStart =
+                    !!plan.plan.plan_start_date && columnDate < plan.plan.plan_start_date;
+
+                  if (isBeforePlanStart) {
+                    return (
+                      <div
+                        key={dayName}
+                        className="rounded-2xl p-3 border border-dashed border-stone-200 bg-stone-50/60"
+                      >
+                        <div className="mb-1.5 flex items-center justify-center gap-1.5">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-stone-300">
+                            {dayName.slice(0, 3)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl px-2 py-2.5 text-center text-[11px] text-stone-400">
+                          Before this plan
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const tasks = day?.tasks ?? [];
                   const isRest =
                     !tasks.length ||

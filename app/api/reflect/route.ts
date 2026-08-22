@@ -61,7 +61,7 @@ export async function POST(request: Request) {
   const reflectionInputSection = auto
     ? `No manual reflection input — this is an AUTOMATIC weekly review. Infer what worked, what failed, and blockers from the week's plan and activity data below. Do not invent details that the data doesn't support; if the data is thin, keep the reflection short and honest.
 
-This week's plan with per-task statuses ("done"/"missed"), day "finished" flags, and "load_feel" feedback (lighter/about_right/heavier than planned):
+This week's plan with per-task statuses ("done"/"missed"), day "finished" flags, and "load_feel" feedback (lighter/about_right/heavier than planned). If "schedule" has fewer than 7 day entries, the plan itself was generated mid-week (see "plan_start_date") — the missing days were never part of this plan and must NOT be described as missed, skipped, or evidence of a behavior pattern:
 ${JSON.stringify(latestPlan ? { week_start: latestPlan.week_start, plan: latestPlan.plan, priority_recommendation: latestPlan.priority_recommendation } : "No started plan this week")}`
     : `User's weekly reflection input:
 ${JSON.stringify(user_input)}`;

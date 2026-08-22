@@ -1,6 +1,6 @@
 import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
-import { activeHistory, effectivePlans, isActivePlan, type PlanRow } from "@/lib/plans";
+import { activeHistory, effectivePlans, isActivePlan, WEEK_DAYS, type PlanRow } from "@/lib/plans";
 
 export async function POST(request: Request) {
   const { mountain_id, available_time, user_constraints, week_start } =
@@ -30,6 +30,18 @@ export async function POST(request: Request) {
   // Planning ahead of the real current week — the week being planned hasn't
   // happened yet, so there's nothing to reflect on.
   const isFutureWeek = weekStart > currentWeekStart;
+
+  const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const todayWeekdayIndex = (today.getDay() + 6) % 7; // 0=Monday ... 6=Sunday
+
+  // The first day this plan can actually schedule tasks for. Generating
+  // ahead of the real week, or right on its Monday, covers the full week —
+  // generating mid-week only covers what's still ahead. Days that have
+  // already passed must never receive tasks, in the AI's output or the UI.
+  const planStartWeekdayIndex = weekStart === currentWeekStart ? todayWeekdayIndex : 0;
+  const planStartDate = weekStart === currentWeekStart ? todayISO : weekStart;
+  const remainingDayNames = WEEK_DAYS.slice(planStartWeekdayIndex);
+  const skippedDayNames = WEEK_DAYS.slice(0, planStartWeekdayIndex);
 
   // Fetch generously, then narrow to real behavioural history: superseded
   // rows and never-started drafts are not evidence of how the user performs.
@@ -144,6 +156,7 @@ Rules:
 - If user is ahead of schedule, consider leveling up
 - Distribute effort across the week, not front-loaded
 - Rest and recovery days are strategic — include them when appropriate
+- The "schedule" array must only contain "day" entries for days that have not passed yet this week — never a day that's already gone, not even as an empty or rest-day placeholder
 - Be specific with tasks: "Complete chapter 3 exercises" not "Study more", "Write 500 words of case study draft" not "Work on portfolio"
 
 About "what_changed" — this is shown to the user before they commit to the week, so they can see the plan adapted to their last week rather than being regenerated at random:
@@ -160,8 +173,9 @@ Target date: ${mountain.race_date || "Not set"}
 Week being planned: ${weekStart}${isFutureWeek ? " (being planned in advance, before this week starts)" : ""}
 Available time: ${available_time || "Not specified"}
 User constraints: ${user_constraints || "None"}
+${skippedDayNames.length ? `\nIMPORTANT — this plan is being generated MID-WEEK, on ${WEEK_DAYS[todayWeekdayIndex]} (${todayISO}). ${skippedDayNames.join(", ")} ${skippedDayNames.length > 1 ? "have" : "has"} already passed — do NOT include ${skippedDayNames.length > 1 ? "them" : "it"} in "schedule" at all: no tasks, no empty entry, no rest-day placeholder. Only include "day" entries for: ${remainingDayNames.join(", ")}.\n${remainingDayNames.length <= 2 ? `Only ${remainingDayNames.length} day(s) remain this week — do NOT compress a full week of work into them. Generate a light, low-pressure "getting started" plan scoped realistically to just ${remainingDayNames.join(" and ")}. A complete plan for the rest of this camp follows next week.` : `Only ${remainingDayNames.length} days remain this week — scale total workload down to match that, rather than keeping full-week task density packed onto fewer days.`}` : ""}
 ${pastPlans.length ? `\nRecent plan history (weeks the user actually committed to and ran — never-started drafts are excluded): ${JSON.stringify(pastPlans.map((p) => ({ recommendation: p.priority_recommendation, notes: p.strategy_notes })))}` : ""}
-${previousPlan ? `\nLAST WEEK'S ACTUAL SCHEDULE with per-task done/missed statuses and daily load feedback — base "what_changed" on the difference between this and the week you are about to write: ${JSON.stringify(previousPlan.plan?.schedule || [])}` : ""}
+${previousPlan ? `\nLAST WEEK'S ACTUAL SCHEDULE with per-task done/missed statuses and daily load feedback — base "what_changed" on the difference between this and the week you are about to write. If it has fewer than 7 days, that plan itself started mid-week; the missing days were never part of it and are not missed work: ${JSON.stringify(previousPlan.plan?.schedule || [])}` : ""}
 ${progressLogs?.length ? `\nRecent progress: ${JSON.stringify(progressLogs.map((l: { log_type: string; data: Record<string, unknown> }) => ({ type: l.log_type, data: l.data })))}` : ""}
 ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) => m.content).join("; ")}` : ""}`,
       },
@@ -178,6 +192,16 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
 
   const result = JSON.parse(content);
 
+  // Deterministic backstop — the prompt asks the model not to schedule days
+  // that have already passed, but a prompt-only rule isn't a guarantee (the
+  // mountain-chat question budget taught the same lesson: models can count
+  // correctly and still not stop on their own). Strip any anyway.
+  if (skippedDayNames.length && Array.isArray(result.plan?.schedule)) {
+    result.plan.schedule = result.plan.schedule.filter(
+      (d: { day: string }) => !skippedDayNames.includes(d.day)
+    );
+  }
+
   // EVERY generated week starts as a draft — an AI proposal the user reviews
   // and adjusts before committing. Nothing is tracked until they start it,
   // so an untouched draft can never be misread as missed work.
@@ -187,6 +211,7 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
     ...(result.plan || {}),
     status: "draft",
     what_changed: previousPlan ? result.what_changed || [] : [],
+    plan_start_date: planStartDate,
   };
 
   const { data, error } = await supabase

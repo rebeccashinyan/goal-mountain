@@ -243,6 +243,14 @@ Tier 2 previews on drafts too: a draft the user has already hand-tuned is *their
 
 **Note on generation timing:** there is no scheduler in this project, so next-week drafts are not auto-generated at rollover — the user triggers generation, which (as before) runs auto-reflection first, then produces the draft. The rollover chain is preserved; only the trigger is manual.
 
+**Mid-week generation never schedules past days.** If a week's first-ever plan is generated after its Monday (e.g. a first plan generated on Saturday), the days that already passed are not the AI's to plan — they get no tasks, not even a rest placeholder. The route computes `plan_start_date` (today's date, clamped to the week being planned) and:
+- tells the model exactly which weekdays are already gone and which remain, with an explicit instruction not to include the gone ones in `schedule` at all
+- scales the ask down with how little of the week is left — 1-2 remaining days get an explicitly "light, low-pressure getting-started" plan instead of a compressed full week, with the normal full week resuming next generation
+- **strips any schedule entries for the skipped days server-side after the model responds**, regardless of what the prompt achieved — the same lesson as the mountain-chat question budget: a model can be told a rule and still not hold it, so the hard guarantee lives in code, not the prompt
+- persists `plan_start_date` on the saved plan (`weekly_plans.plan.plan_start_date`) so the UI and Reflection Agent both know which days were genuinely never part of this plan
+
+Generating exactly on a week's Monday, or generating a future week ahead of time, sets `plan_start_date` to that week's Monday — i.e. no day is treated as skipped, identical to pre-existing behavior. See `PlanView`'s **"Before this plan"** columns in UI_SPEC.md and the `weekly_plans.plan.plan_start_date` field in DATABASE.md.
+
 **Input:**
 ```json
 {
@@ -416,7 +424,7 @@ Triggered server-side by `POST /api/plan` at week rollover: before generating, t
 }
 ```
 
-**DB reads:** `mountains`, `reflections` (last 4), `progress_logs` (last 14), `memory` (motivation, obstacle, behavior_pattern), `weekly_plans` (auto mode only — the latest **active** week via `activeHistory()`, for task statuses + load_feel; a never-started draft is skipped, since reflecting on work the user never agreed to do would manufacture failures)  
+**DB reads:** `mountains`, `reflections` (last 4), `progress_logs` (last 14), `memory` (motivation, obstacle, behavior_pattern), `weekly_plans` (auto mode only — the latest **active** week via `activeHistory()`, for task statuses + load_feel; a never-started draft is skipped, since reflecting on work the user never agreed to do would manufacture failures). If that plan's `schedule` has fewer than 7 days (it was generated mid-week — see `plan_start_date` in the Planning Agent section), the prompt is told explicitly that the missing days were never part of the plan, so it doesn't read the gap as missed or skipped work.  
 **DB writes:**
 - `reflections` — new reflection row
 - `memory` — auto-writes all entries from `memories_to_store` with `source: "reflection"`

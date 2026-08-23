@@ -212,6 +212,12 @@ ${memories?.length ? `\nUser patterns: ${memories.map((m: { content: string }) =
     status: "draft",
     what_changed: previousPlan ? result.what_changed || [] : [],
     plan_start_date: planStartDate,
+    // Kept so "Change plan setup" can show the user what they actually
+    // told us last time rather than an empty form.
+    setup: {
+      ...(available_time ? { available_time } : {}),
+      ...(user_constraints ? { user_constraints } : {}),
+    },
   };
 
   const { data, error } = await supabase
@@ -265,6 +271,72 @@ export async function PATCH(request: Request) {
   }
 
   return Response.json(data);
+}
+
+// Discards a draft week entirely, returning that week to the no-plan state.
+// Deletes every DRAFT row for the week, not just the newest one — otherwise
+// a superseded draft underneath would simply resurface as the effective
+// plan and the week would look un-discarded. Active plans are never touched
+// here: a started week is history, and losing it would lose real tracking.
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const plan_id = searchParams.get("plan_id");
+
+  if (!plan_id) {
+    return Response.json({ error: "plan_id is required" }, { status: 400 });
+  }
+
+  const { data: row, error: fetchError } = await supabase
+    .from("weekly_plans")
+    .select("mountain_id, week_start, plan")
+    .eq("id", plan_id)
+    .single();
+
+  if (fetchError || !row) {
+    return Response.json({ error: "Plan not found" }, { status: 404 });
+  }
+  if (row.plan?.status !== "draft") {
+    return Response.json(
+      { error: "Only a draft can be discarded. An active week is real history." },
+      { status: 400 }
+    );
+  }
+
+  const { data: weekRows, error: weekError } = await supabase
+    .from("weekly_plans")
+    .select("id, plan")
+    .eq("mountain_id", row.mountain_id)
+    .eq("week_start", row.week_start);
+
+  if (weekError) {
+    return Response.json({ error: weekError.message }, { status: 500 });
+  }
+
+  const draftIds = (weekRows || [])
+    .filter((r: { plan: { status?: string } }) => r.plan?.status === "draft")
+    .map((r: { id: string }) => r.id);
+
+  // Never issue the delete with an empty id list — an unconstrained `in`
+  // filter is exactly how a scoped delete turns into a table-wide one.
+  if (!draftIds.length) {
+    return Response.json({ discarded: 0, week_start: row.week_start });
+  }
+
+  // Scoped three ways (mountain, week, explicit ids) so this delete cannot
+  // reach beyond the one week it is discarding even if the id list is wrong.
+  const { data: deleted, error: deleteError } = await supabase
+    .from("weekly_plans")
+    .delete()
+    .eq("mountain_id", row.mountain_id)
+    .eq("week_start", row.week_start)
+    .in("id", draftIds)
+    .select("id");
+
+  if (deleteError) {
+    return Response.json({ error: deleteError.message }, { status: 500 });
+  }
+
+  return Response.json({ discarded: (deleted || []).length, week_start: row.week_start });
 }
 
 export async function GET(request: Request) {

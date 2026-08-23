@@ -209,7 +209,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 ## 4. Planning + Strategy Agent
 
-**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `POST /api/plan/steer`, `POST /api/plan/revision`, `POST /api/plan/replace-task`, `POST /api/plan/rebase`
+**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `DELETE /api/plan`, `POST /api/plan/steer`, `POST /api/plan/revision`, `POST /api/plan/replace-task`, `POST /api/plan/rebase`
 
 **Purpose:** Generates an adaptive weekly schedule. Accounts for past performance, user constraints, and behavioral patterns from memory.
 
@@ -250,6 +250,8 @@ Tier 2 previews on drafts too: a draft the user has already hand-tuned is *their
 - persists `plan_start_date` on the saved plan (`weekly_plans.plan.plan_start_date`) so the UI and Reflection Agent both know which days were genuinely never part of this plan
 
 Generating exactly on a week's Monday, or generating a future week ahead of time, sets `plan_start_date` to that week's Monday — i.e. no day is treated as skipped, identical to pre-existing behavior. See `PlanView`'s **"Before this plan"** columns in UI_SPEC.md and the `weekly_plans.plan.plan_start_date` field in DATABASE.md.
+
+**Changing a draft's inputs — "Change plan setup":** the draft footer carries the primary **Start this week →** plus a deliberately quiet **Change plan setup**, which reopens the generation form pre-filled from `plan.setup` (the `available_time` / `user_constraints` the user gave when this week was generated, persisted by `POST /api/plan` for exactly this purpose). Regenerating from there is an ordinary `POST /api/plan` — it **inserts a new row**, and the newest-row-per-week selection rule swaps it in only after it succeeds. That's what makes the old draft safe: entering setup deletes nothing, a failed generation leaves the previous draft (and every Edit/Replace/Remove in it) exactly as it was, and Cancel simply closes the form. Destroying a draft is a separate, explicitly-confirmed action (`DELETE /api/plan`) kept out of the footer and behind the `···` menu, since unlike a regenerate there's nothing to come back to.
 
 **Starting a draft late — `POST /api/plan/rebase`:** a draft can sit unstarted past its own days (generated on time, but "Start this week" isn't pressed until later — a different situation from mid-week generation above, and independently possible: a plan generated exactly on Monday can still be started on Thursday). This is the *only* thing "Start this week" does — same button, no separate "rebase" feature or extra confirmation step:
 

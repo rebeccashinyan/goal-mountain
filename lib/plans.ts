@@ -42,6 +42,10 @@ export interface PlanJson {
   // the schedule may once have had tasks there (see POST /api/plan/rebase),
   // and render as "Before you started" rather than missed/not-logged.
   activated_from?: string;
+  // What the user told the Planning Agent when this week was generated.
+  // Persisted so "Change plan setup" can pre-fill the form with their real
+  // answers instead of making them retype what they already said.
+  setup?: { available_time?: string; user_constraints?: string };
 }
 
 export interface PendingRevision {

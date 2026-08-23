@@ -47,6 +47,7 @@ interface PlanData {
     pending_revision?: PendingRevision;
     plan_start_date?: string;
     activated_from?: string;
+    setup?: { available_time?: string; user_constraints?: string };
   };
   priority_recommendation: string;
   next_best_action: string;
@@ -132,6 +133,13 @@ export default function PlanView({
   const [generating, setGenerating] = useState(false);
   const [availableTime, setAvailableTime] = useState("");
   const [constraints, setConstraints] = useState("");
+  // "Change plan setup" — reopens the generation form over an existing
+  // draft. The draft itself is untouched while this is open; a new one only
+  // replaces it once generation actually succeeds.
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupError, setSetupError] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [finishingDay, setFinishingDay] = useState<string | null>(null);
   const [savingDay, setSavingDay] = useState(false);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
@@ -258,9 +266,14 @@ export default function PlanView({
     };
   }, []);
 
+  // Generating a week INSERTS a new row rather than editing the old one, so
+  // an existing draft survives untouched until the new one lands — a failed
+  // generation, or a change of mind, can never cost the user the plan (and
+  // any Edit/Replace/Remove work in it) they already had.
   async function generatePlan() {
     if (generating || !viewedWeekStart) return;
     setGenerating(true);
+    setSetupError(false);
 
     const body: Record<string, string> = {
       mountain_id: mountainId,
@@ -269,21 +282,62 @@ export default function PlanView({
     if (availableTime.trim()) body.available_time = availableTime.trim();
     if (constraints.trim()) body.user_constraints = constraints.trim();
 
-    // Week rollover reflection runs server-side inside POST /api/plan
-    // (skipped automatically when planning a week ahead of the real one)
-    const res = await fetch("/api/plan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    try {
+      // Week rollover reflection runs server-side inside POST /api/plan
+      // (skipped automatically when planning a week ahead of the real one)
+      const res = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      setPlans((prev) => [data, ...prev]);
-      if (isCurrentCalendarWeek) fetchReflection();
+      if (res.ok) {
+        const data = await res.json();
+        // Newest row for the week wins (effectivePlans), so this replaces
+        // the old draft in the view only now that it exists.
+        setPlans((prev) => [data, ...prev]);
+        setSetupOpen(false);
+        if (isCurrentCalendarWeek) fetchReflection();
+      } else {
+        setSetupError(true);
+      }
+    } catch {
+      setSetupError(true);
+    } finally {
+      setGenerating(false);
     }
+  }
 
-    setGenerating(false);
+  // Pre-fills from what the user actually told the Planning Agent for this
+  // week, so reopening setup is a revision of their answers, not a retype.
+  function openSetup() {
+    setAvailableTime(plan?.plan.setup?.available_time ?? "");
+    setConstraints(plan?.plan.setup?.user_constraints ?? "");
+    setSetupError(false);
+    setSetupOpen(true);
+  }
+
+  // Discards the whole draft week — deliberately kept out of the footer and
+  // behind a confirm, since unlike "Change plan setup" there's nothing to
+  // come back to afterwards.
+  async function discardDraft() {
+    if (!plan || discarding) return;
+    setDiscarding(true);
+    try {
+      const res = await fetch(`/api/plan?plan_id=${plan.id}`, { method: "DELETE" });
+      if (res.ok) {
+        // Mirrors the server exactly: drafts for this week go, anything
+        // active stays (and correctly resurfaces if it was superseded).
+        setPlans((prev) =>
+          prev.filter((p) => !(p.week_start === plan.week_start && planStatus(p.plan) === "draft"))
+        );
+        setSetupOpen(false);
+        setDiscardOpen(false);
+        setMoreOpen(false);
+      }
+    } finally {
+      setDiscarding(false);
+    }
   }
 
   function startPlanTalk() {
@@ -831,7 +885,7 @@ export default function PlanView({
                     : "No plan was made for this week."}
             </p>
           )}
-          {isDraft && (
+          {isDraft && !setupOpen && (
             <p className="mt-1 text-sm text-stone-500">
               {hasStartedAWeek
                 ? "I prepared a starting plan for this week. Adjust anything before you begin."
@@ -859,12 +913,20 @@ export default function PlanView({
         )}
       </div>
 
-      {/* Form — only for the very first plan; changes go through quick actions or the guide chat */}
-      {!plan && !generating && (
+      {/* Plan setup — the first-plan form, and the same form reopened over an
+          existing draft via "Change plan setup". While it's open over a
+          draft the draft stays exactly as it is, edits included. */}
+      {((!plan && !generating) || setupOpen) && (
         <div
           className="rounded-3xl border border-[#ECECEC] bg-white p-5 space-y-3"
           style={{ boxShadow: cardShadow }}
         >
+          {setupOpen && (
+            <p className="text-sm text-stone-500">
+              Update what you told me, then generate a new draft. Your current draft stays
+              until the new one is ready.
+            </p>
+          )}
           <div>
             <label className="block text-xs font-medium text-stone-500 mb-1.5 uppercase tracking-wide">
               Available time this week
@@ -889,20 +951,44 @@ export default function PlanView({
               className={inputClasses}
             />
           </div>
-          <div className="flex gap-2 pt-1">
+          {setupError && (
+            <p className="text-xs text-summit">
+              That didn&apos;t generate. Your current draft is untouched — try again, or go back to it.
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-3 pt-1">
             <button
               onClick={generatePlan}
               disabled={generating}
               className="text-sm px-4 py-2 rounded-xl bg-forest-700 text-white font-medium hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
               style={{ boxShadow: "0 2px 8px rgba(20,60,35,0.2)" }}
             >
-              Generate
+              {generating ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Generating...
+                </span>
+              ) : setupOpen ? (
+                "Generate new draft"
+              ) : (
+                "Generate"
+              )}
             </button>
+            {setupOpen && (
+              <button
+                type="button"
+                onClick={() => setSetupOpen(false)}
+                disabled={generating}
+                className="text-sm font-medium text-stone-500 hover:text-forest-700 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+              >
+                Cancel — back to draft
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {plan && (
+      {plan && !setupOpen && (
         <>
           {/* Week in review — written automatically by the Reflection Agent */}
           {reflectionIsFresh && isCurrentCalendarWeek && (
@@ -1172,7 +1258,10 @@ export default function PlanView({
                   <button
                     type="button"
                     disabled={!!steering}
-                    onClick={() => setMoreOpen((v) => !v)}
+                    onClick={() => {
+                      setDiscardOpen(false);
+                      setMoreOpen((v) => !v);
+                    }}
                     aria-haspopup="menu"
                     aria-expanded={moreOpen}
                     aria-label="More plan options"
@@ -1190,7 +1279,10 @@ export default function PlanView({
                         type="button"
                         aria-label="Close menu"
                         className="fixed inset-0 z-10 cursor-default"
-                        onClick={() => setMoreOpen(false)}
+                        onClick={() => {
+                          setDiscardOpen(false);
+                          setMoreOpen(false);
+                        }}
                       />
                       <div
                         role="menu"
@@ -1208,6 +1300,51 @@ export default function PlanView({
                             Replaces every remaining task, including ones you like.
                           </span>
                         </button>
+                        {/* Discard lives here, not in the footer: unlike
+                            "Change plan setup" there's no draft to come
+                            back to afterwards. */}
+                        {isDraft && (
+                          <>
+                            <div className="my-1 border-t border-[#ECECEC]" />
+                            {discardOpen ? (
+                              <div className="px-2.5 py-2">
+                                <p className="text-[11px] leading-snug text-stone-600">
+                                  Delete this draft and its edits? This can&apos;t be undone.
+                                </p>
+                                <div className="mt-2 flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={discarding}
+                                    onClick={discardDraft}
+                                    className="rounded-md bg-summit px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90 disabled:opacity-40 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-opacity duration-200"
+                                  >
+                                    {discarding ? "Discarding..." : "Discard"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={discarding}
+                                    onClick={() => setDiscardOpen(false)}
+                                    className="text-[11px] font-medium text-stone-400 hover:text-stone-600 disabled:opacity-40 transition-colors duration-200"
+                                  >
+                                    Keep it
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => setDiscardOpen(true)}
+                                className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-red-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                              >
+                                <span className="block text-xs font-semibold text-summit">Discard draft</span>
+                                <span className="mt-0.5 block text-[11px] leading-snug text-stone-500">
+                                  Deletes this week entirely. Nothing to come back to.
+                                </span>
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
                     </>
                   )}
@@ -1890,21 +2027,33 @@ export default function PlanView({
             </div>
           )}
 
-          {/* Start this week — commits the draft; tracking begins here */}
+          {/* Start this week — commits the draft; tracking begins here.
+              "Change plan setup" sits beside it as a deliberately quiet
+              text button: it's the escape hatch, not the expected path. */}
           {isDraft && (
             <div className="flex flex-col sm:flex-row items-center gap-3 rounded-2xl border border-forest-200 bg-forest-50 p-4">
               <p className="flex-1 text-sm text-forest-800">
                 Nothing is tracked until you start — take as long as you need to adjust it.
               </p>
-              <button
-                type="button"
-                onClick={startWeek}
-                disabled={startingWeek}
-                className="w-full sm:w-auto text-sm px-5 py-2.5 rounded-xl bg-forest-700 text-white font-semibold hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
-                style={{ boxShadow: "0 2px 8px rgba(20,60,35,0.2)" }}
-              >
-                {startingWeek ? "Starting..." : "Start this week →"}
-              </button>
+              <div className="flex w-full shrink-0 flex-col-reverse items-center gap-x-4 gap-y-2 sm:w-auto sm:flex-row">
+                <button
+                  type="button"
+                  onClick={openSetup}
+                  disabled={startingWeek}
+                  className="text-sm font-medium text-forest-700/70 underline-offset-2 hover:text-forest-800 hover:underline disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                >
+                  Change plan setup
+                </button>
+                <button
+                  type="button"
+                  onClick={startWeek}
+                  disabled={startingWeek}
+                  className="w-full sm:w-auto text-sm px-5 py-2.5 rounded-xl bg-forest-700 text-white font-semibold hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
+                  style={{ boxShadow: "0 2px 8px rgba(20,60,35,0.2)" }}
+                >
+                  {startingWeek ? "Starting..." : "Start this week →"}
+                </button>
+              </div>
             </div>
           )}
         </>

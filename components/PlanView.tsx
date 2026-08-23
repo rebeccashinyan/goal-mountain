@@ -278,7 +278,11 @@ export default function PlanView({
       const data: PlanData[] = await res.json();
       setPlans(data);
     }
-    setViewedWeekStart(mondayOf(new Date()));
+    // Only seed the viewed week on first load. This refetches whenever
+    // refreshKey changes, and snapping back to the current week here would
+    // silently move the user off the week they navigated to — so the next
+    // "Generate" would target a different week than the one on screen.
+    setViewedWeekStart((w) => w ?? mondayOf(new Date()));
     setLoading(false);
   }, [mountainId]);
 

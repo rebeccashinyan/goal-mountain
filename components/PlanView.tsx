@@ -164,11 +164,16 @@ export default function PlanView({
   const [customDirectionInput, setCustomDirectionInput] = useState("");
   const [generatingReplacement, setGeneratingReplacement] = useState(false);
   const [replacePreview, setReplacePreview] = useState<{
-    task: string;
+    // The fitted version always keeps the original duration and priority —
+    // Replace changes what a task is, never how much time it costs, unless
+    // the user explicitly opts into the full version below.
+    fitted: { task: string };
+    full: { task: string; duration: string } | null;
     duration: string;
     priority: string;
     direction: string;
     affected: { day: string; task: string }[];
+    selectedVersion: "fitted" | "full";
   } | null>(null);
   // Set once a replacement is confirmed if it makes other tasks elsewhere
   // in the plan inconsistent — offered as a review, never applied silently.
@@ -578,8 +583,11 @@ export default function PlanView({
   }
 
   // Step 2: turn the chosen direction (AI-suggested or the user's own
-  // typed text) into one concrete task, shown as a preview — nothing is
-  // applied until "Replace task" is pressed.
+  // typed text) into a task that fits the ORIGINAL duration and priority —
+  // Replace changes content, not workload. If the direction genuinely
+  // doesn't compress, the server also proposes a longer "full version",
+  // offered but never pre-selected. Nothing is applied until "Replace
+  // task" is pressed.
   async function chooseDirection(dayName: string, task: Task, direction: string) {
     if (!plan || generatingReplacement) return;
     setGeneratingReplacement(true);
@@ -599,11 +607,13 @@ export default function PlanView({
       if (res.ok) {
         const data = await res.json();
         setReplacePreview({
-          task: data.replacement?.task || task.task,
+          fitted: { task: data.replacement?.task || task.task },
+          full: data.fullVersion || null,
           duration: data.replacement?.duration || task.duration,
           priority: data.replacement?.priority || task.priority,
           direction,
           affected: data.affected || [],
+          selectedVersion: "fitted",
         });
         setReplaceStep("preview");
       }
@@ -627,16 +637,22 @@ export default function PlanView({
   }
 
   // Step 3: commit the previewed task. Only this one task changes — no
-  // other day is touched here, regardless of what "affected" flagged.
+  // other day is touched here, regardless of what "affected" flagged. If
+  // the user picked the full version, its own AI-estimated duration is
+  // used; otherwise duration and priority are always the original ones.
   function confirmReplace(dayName: string, index: number) {
     if (!plan?.plan.schedule || !replacePreview) return;
+    const usingFull = replacePreview.selectedVersion === "full" && replacePreview.full;
+    const chosenTask = usingFull ? replacePreview.full!.task : replacePreview.fitted.task;
+    const chosenDuration = usingFull ? replacePreview.full!.duration : replacePreview.duration;
+
     const previousPlan = plan;
     const original = plan.plan.schedule.find((d) => d.day === dayName)?.tasks[index];
     const schedule = plan.plan.schedule.map((d) => {
       if (d.day !== dayName) return d;
       const tasks = d.tasks.map((t, i) =>
         i === index
-          ? { task: replacePreview.task, duration: replacePreview.duration, priority: replacePreview.priority }
+          ? { task: chosenTask, duration: chosenDuration, priority: replacePreview.priority }
           : t
       );
       return { ...d, tasks };
@@ -647,10 +663,12 @@ export default function PlanView({
     // it's a real decision between framings of the same work.
     if (original) {
       recordPreference(
-        `Swapped the planned task "${original.task.slice(0, 90)}" for "${replacePreview.task.slice(0, 90)}" — chose to ${replacePreview.direction.slice(0, 80)}`,
+        `Swapped the planned task "${original.task.slice(0, 90)}" for "${chosenTask.slice(0, 90)}" — chose to ${replacePreview.direction.slice(0, 80)}${usingFull ? " (opted into the longer full version)" : ""}`,
         "task_replace"
       );
-      const freed = parseDurationMinutes(original.duration) - parseDurationMinutes(replacePreview.duration);
+      // Only ever offers freed time back — picking the full (longer)
+      // version never triggers it, since nothing was actually freed.
+      const freed = parseDurationMinutes(original.duration) - parseDurationMinutes(chosenDuration);
       if (freed >= 10) setFreedTime({ day: dayName, minutes: freed });
     }
 
@@ -662,7 +680,7 @@ export default function PlanView({
       setTaskImpact({
         day: dayName,
         originalTask: original.task,
-        newTask: replacePreview.task,
+        newTask: chosenTask,
         direction: replacePreview.direction,
         affected: replacePreview.affected,
       });
@@ -1648,10 +1666,64 @@ export default function PlanView({
                                       <>
                                         <div className="rounded-lg border border-forest-300 bg-white p-2">
                                           <p className="text-[11px] font-medium text-stone-700 leading-relaxed">
-                                            {replacePreview.task}
+                                            {replacePreview.selectedVersion === "full" && replacePreview.full
+                                              ? replacePreview.full.task
+                                              : replacePreview.fitted.task}
                                           </p>
-                                          <p className="mt-1 text-[10px] text-stone-400">{replacePreview.duration}</p>
+                                          <p className="mt-1 text-[10px] text-stone-400">
+                                            {replacePreview.selectedVersion === "full" && replacePreview.full
+                                              ? replacePreview.full.duration
+                                              : replacePreview.duration}
+                                          </p>
                                         </div>
+
+                                        {replacePreview.full && (
+                                          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-2 space-y-1.5">
+                                            <p className="text-[10px] leading-snug text-amber-800">
+                                              A full version would take ~{replacePreview.full.duration}.
+                                            </p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  setReplacePreview((p) => (p ? { ...p, selectedVersion: "fitted" } : p))
+                                                }
+                                                className={`text-[10px] font-semibold px-2 py-1 rounded-md border transition-colors duration-200 ${
+                                                  replacePreview.selectedVersion === "fitted"
+                                                    ? "border-forest-700 bg-forest-700 text-white"
+                                                    : "border-stone-200 bg-white text-stone-600 hover:border-forest-300"
+                                                }`}
+                                              >
+                                                Fit into {replacePreview.duration}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  setReplacePreview((p) => (p ? { ...p, selectedVersion: "full" } : p))
+                                                }
+                                                className={`text-[10px] font-semibold px-2 py-1 rounded-md border transition-colors duration-200 ${
+                                                  replacePreview.selectedVersion === "full"
+                                                    ? "border-forest-700 bg-forest-700 text-white"
+                                                    : "border-stone-200 bg-white text-stone-600 hover:border-forest-300"
+                                                }`}
+                                              >
+                                                Use full {replacePreview.full.duration}
+                                              </button>
+                                            </div>
+                                            <p className="text-[10px] text-amber-700">
+                                              {(() => {
+                                                const otherMin = (day?.tasks || [])
+                                                  .filter((_, ti) => ti !== i)
+                                                  .reduce((sum, t) => sum + parseDurationMinutes(t.duration), 0);
+                                                const total = formatMinutes(
+                                                  otherMin + parseDurationMinutes(replacePreview.full.duration)
+                                                );
+                                                return `Using the full version makes ${dayName} total ${total}.`;
+                                              })()}
+                                            </p>
+                                          </div>
+                                        )}
+
                                         <div className="flex items-center gap-2 pt-0.5">
                                           <button
                                             type="button"

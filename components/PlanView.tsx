@@ -46,6 +46,7 @@ interface PlanData {
     what_changed?: string[];
     pending_revision?: PendingRevision;
     plan_start_date?: string;
+    activated_from?: string;
   };
   priority_recommendation: string;
   next_best_action: string;
@@ -188,6 +189,7 @@ export default function PlanView({
 
   const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
   const todayWeekStart = mondayOf(new Date());
+  const todayISO = toLocalISODate(new Date());
 
   // One plan per week: regenerating a draft leaves superseded rows behind,
   // so the newest row for a week_start is the one that counts.
@@ -371,17 +373,39 @@ export default function PlanView({
     }
   }
 
-  // Commit the draft — this is the moment tracking becomes possible.
+  // Commit the draft — this is the moment tracking becomes possible. If the
+  // draft has tasks on days that already passed (started later than its own
+  // Monday, or than the day it was generated), the server rescues them —
+  // moving necessary tasks forward, dropping optional ones — before
+  // activating, in the same call. No separate step, no extra confirmation:
+  // "Start this week" always does exactly one thing.
   async function startWeek() {
     if (!plan || startingWeek) return;
     setStartingWeek(true);
-    const started = { ...plan, plan: { ...plan.plan, status: "active" as const } };
-    setPlans((prev) => prev.map((p) => (p.id === started.id ? started : p)));
-    await fetch("/api/plan", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan_id: started.id, plan: started.plan }),
-    }).catch(() => {});
+    const previousPlan = plan;
+    try {
+      const res = await fetch("/api/plan/rebase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: plan.id, mountain_id: mountainId }),
+      });
+      if (res.ok) {
+        const data: PlanData & { rebased?: boolean; moved?: number; removed?: number } = await res.json();
+        setPlans((prev) => prev.map((p) => (p.id === data.id ? { ...p, ...data } : p)));
+        if (data.rebased) {
+          const parts: string[] = [];
+          if (data.moved) parts.push(`${data.moved} task${data.moved === 1 ? "" : "s"} moved`);
+          if (data.removed) parts.push(`${data.removed} optional task${data.removed === 1 ? "" : "s"} removed`);
+          showUndoToast(
+            `Plan adjusted to start today${parts.length ? " · " + parts.join(" · ") : ""}`,
+            previousPlan
+          );
+        }
+      }
+    } catch {
+      // starting is best-effort from the UI's perspective — a failed call
+      // just leaves the draft as a draft, nothing to roll back
+    }
     setStartingWeek(false);
   }
 
@@ -1290,6 +1314,34 @@ export default function PlanView({
                         </div>
                         <div className="rounded-xl px-2 py-2.5 text-center text-[11px] text-stone-400">
                           Before this plan
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // A day this plan DID schedule tasks for, but that has
+                  // already passed while the plan sat unstarted. While
+                  // still a draft this is just "today" moving past it —
+                  // nothing gets rebased until Start is actually pressed.
+                  // Once active, `activated_from` is the permanent record
+                  // of that moment, so this stays muted forever rather
+                  // than reading as a missed day.
+                  const startBoundary = isDraft ? todayISO : plan.plan.activated_from;
+                  const isBeforeYouStarted = !!startBoundary && columnDate < startBoundary;
+
+                  if (isBeforeYouStarted) {
+                    return (
+                      <div
+                        key={dayName}
+                        className="rounded-2xl p-3 border border-dashed border-stone-200 bg-stone-50/60"
+                      >
+                        <div className="mb-1.5 flex items-center justify-center gap-1.5">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-stone-300">
+                            {dayName.slice(0, 3)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl px-2 py-2.5 text-center text-[11px] text-stone-400">
+                          Before you started
                         </div>
                       </div>
                     );

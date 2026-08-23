@@ -37,6 +37,11 @@ export interface PlanJson {
   // today's date at generation time — days before it were never part of
   // this plan and must render as "Before this plan", not as missed work.
   plan_start_date?: string;
+  // The date (YYYY-MM-DD) "Start this week" was actually pressed — set once,
+  // at activation. Days before it are never tracking evidence even though
+  // the schedule may once have had tasks there (see POST /api/plan/rebase),
+  // and render as "Before you started" rather than missed/not-logged.
+  activated_from?: string;
 }
 
 export interface PendingRevision {

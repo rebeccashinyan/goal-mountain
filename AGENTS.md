@@ -209,13 +209,13 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 ## 4. Planning + Strategy Agent
 
-**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `POST /api/plan/steer`, `POST /api/plan/revision`, `POST /api/plan/replace-task`
+**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `POST /api/plan/steer`, `POST /api/plan/revision`, `POST /api/plan/replace-task`, `POST /api/plan/rebase`
 
 **Purpose:** Generates an adaptive weekly schedule. Accounts for past performance, user constraints, and behavioral patterns from memory.
 
 ### Plan lifecycle — draft → active
 
-Every generated week is a **draft** first: an AI proposal the user reviews and adjusts before committing. Nothing is tracked until they press "Start this week", which flips it to **active**. Draft is a property of the *plan*, not of the mountain — the second, fifth, and fiftieth week all start as drafts, not just the first.
+Every generated week is a **draft** first: an AI proposal the user reviews and adjusts before committing. Nothing is tracked until they press "Start this week", which flips it to **active** via `POST /api/plan/rebase` (see below — same button, no separate step). Draft is a property of the *plan*, not of the mountain — the second, fifth, and fiftieth week all start as drafts, not just the first.
 
 Status lives in the plan jsonb as `plan.status` (no extra column). Rows written before this lifecycle existed carry no status; those count as legacy **active** plans, so anything not explicitly `"draft"` is treated as active. `lib/plans.ts` is the single source of truth for this rule — `planStatus()`, `isActivePlan()`, `effectivePlans()`, `activeHistory()`.
 
@@ -223,7 +223,7 @@ Two selection rules every consumer must follow:
 - **Effective plan for a week** = the *newest row for that `week_start`* (regenerating a draft leaves superseded rows behind). Never "newest row overall" — that may be a next-week draft the user hasn't accepted.
 - **Behavioural history** = effective plans filtered to active only. A draft the user never started is not evidence of anything; reading one as performance would invent missed tasks. Enforced via `activeHistory()` in the Planning, Reflection, Guide, and Proactive agents.
 
-Only an active plan can produce daily tracking, done/missed statuses, "not logged" days, progress logs, daily check-ins, or a week reflection.
+Only an active plan can produce daily tracking, done/missed statuses, "not logged" days, progress logs, daily check-ins, or a week reflection. And within an active plan, only days on or after `plan.activated_from` (the date "Start this week" was actually pressed) count — days before it render as a muted **"Before you started"** column, the same treatment a draft gives any already-past day before it's even started. See `POST /api/plan/rebase` below.
 
 ### Interaction hierarchy — how a plan changes
 
@@ -250,6 +250,22 @@ Tier 2 previews on drafts too: a draft the user has already hand-tuned is *their
 - persists `plan_start_date` on the saved plan (`weekly_plans.plan.plan_start_date`) so the UI and Reflection Agent both know which days were genuinely never part of this plan
 
 Generating exactly on a week's Monday, or generating a future week ahead of time, sets `plan_start_date` to that week's Monday — i.e. no day is treated as skipped, identical to pre-existing behavior. See `PlanView`'s **"Before this plan"** columns in UI_SPEC.md and the `weekly_plans.plan.plan_start_date` field in DATABASE.md.
+
+**Starting a draft late — `POST /api/plan/rebase`:** a draft can sit unstarted past its own days (generated on time, but "Start this week" isn't pressed until later — a different situation from mid-week generation above, and independently possible: a plan generated exactly on Monday can still be started on Thursday). This is the *only* thing "Start this week" does — same button, no separate "rebase" feature or extra confirmation step:
+
+**Input:** `{ plan_id, mountain_id }`
+
+1. Compares each scheduled day's calendar date against today. If nothing is expired (starting on time, or the only expired days were already empty), it's a plain `status: "draft" → "active"` flip — no AI call, identical to the old behavior.
+2. If some days *with tasks* have already passed, it rescues them in the same request: necessary/high-priority tasks move to today or a later day this week (never deleted); optional/lower-value tasks may move or be dropped entirely — with an explicit instruction not to overload today just because several days expired, preferring to spread rescued work across open days first. The model sees every remaining day (today through Sunday), including ones with no tasks yet, as a valid destination — not just days that already happened to have something scheduled.
+3. Expired days are dropped from `schedule` entirely (never left as empty placeholders); a **deterministic code-level filter** rejects any model output naming a day outside "today through this week's Sunday" — the same "don't trust the prompt alone" pattern as mid-week generation's day-skipping.
+4. Only then does it write `status: "active"` and `activated_from: <today>` — in the same database update as the rescue, so there's never a moment where a rebased-but-not-yet-active state exists.
+
+**Output:** the updated (now active) `weekly_plans` row, plus `rebased: boolean` and, when `true`, `moved`/`removed` counts computed with `diffSchedules()` from `lib/plans.ts` (the same deterministic diff the steer revision card uses — never model-narrated, so the feedback text can't misreport itself).
+
+The frontend shows nothing extra when `rebased` is false (silent activation, exactly as before this feature existed). When `true`, it surfaces the existing undo-toast pattern already used elsewhere in `PlanView` — *"Plan adjusted to start today · 2 tasks moved · 1 optional task removed"* with **Undo** — reusing the pre-rebase plan snapshot already held in client state, so undo reverts both the schedule *and* the status back to draft in one action. No new UI surface, no new confirmation dialog.
+
+**DB reads:** `mountains`, `weekly_plans` (the draft being started)
+**DB writes:** `weekly_plans`
 
 **Input:**
 ```json

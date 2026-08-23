@@ -95,13 +95,14 @@ Planning + Strategy Agent output. One row per planning session (multiple per mou
 | `what_changed` | Short phrases describing how this week adapted to the last one. Populated from the second week onward; empty on a first week |
 | `pending_revision` | `{ schedule, focus_area, priority_recommendation, note, diff, created_at }` — a proposed whole-plan change awaiting the user's decision. Written by `/api/plan/steer` on **drafts and active weeks alike**, and cleared by `POST /api/plan/revision`. While present, the live `schedule` is authoritative and untouched |
 | `plan_start_date` | date string (`YYYY-MM-DD`) — the first day this plan actually covers. Equal to `week_start` unless generation happened mid-week, in which case it's the generation date. `schedule` never has entries for days before it — see the Planning Agent's mid-week generation behavior in AGENTS.md. Absent on rows written before this existed; the UI treats a missing value as "not before the plan" (no muting), so old rows render exactly as they always have |
+| `activated_from` | date string (`YYYY-MM-DD`) — the date "Start this week" was actually pressed, set once by `POST /api/plan/rebase` in the same write that flips `status` to `"active"`. Days before it are never tracking evidence, even if the schedule once had tasks there (they're rescued or dropped at that same moment — see AGENTS.md → Planning Agent). Absent on draft rows and on legacy active rows predating this field; the UI treats a missing value as "not before activation" (no muting) |
 
 **Notes:**
 - **`week_start` is not unique.** Regenerating a draft inserts another row for the same week, so the *effective* plan for a week is the **newest row for that `week_start`** — never simply the newest row overall, which may be a next-week draft the user hasn't accepted.
 - **Only active plans are behavioural evidence.** The Planning, Reflection, Guide, and Proactive agents filter to active plans before reading history; a draft the user never started must never be interpreted as tasks they missed. Both rules live in [lib/plans.ts](lib/plans.ts) (`effectivePlans()`, `activeHistory()`) — use them rather than re-deriving the filter.
 - Only an active plan can produce daily tracking, progress logs, daily check-ins, or a week reflection.
-- **`schedule` may cover fewer than 7 days.** A day before `plan_start_date` was never generated for — it's not a rest day, not "not logged", it simply isn't part of this plan. `PlanView` renders it as a muted "Before this plan" column instead of a trackable one.
-- `POST /api/plan/steer` (quick actions + guide requests), `POST /api/plan/revision` (apply/discard a proposed change), and `POST /api/plan/replace-task` (the two-step AI-assisted single-task Replace flow — directions, then a concrete task) are companions to `POST /api/plan` — see AGENTS.md → Planning + Strategy Agent. None of them insert rows: `steer` and `revision` update the existing plan in place, and `replace-task` is stateless (it reads `weekly_plans` by `plan_id` for schedule context, but the client applies the confirmed replacement via `PATCH /api/plan`).
+- **`schedule` may cover fewer than 7 days.** A day before `plan_start_date` was never generated for; a day before `activated_from` (on an active plan) was rescued or dropped when the draft was finally started. Neither is a rest day, neither is "not logged" — `PlanView` renders both as a muted column ("Before this plan" / "Before you started") instead of a trackable one.
+- `POST /api/plan/steer` (quick actions + guide requests), `POST /api/plan/revision` (apply/discard a proposed change), `POST /api/plan/replace-task` (the two-step AI-assisted single-task Replace flow — directions, then a concrete task), and `POST /api/plan/rebase` (what "Start this week" actually calls — rescues any already-passed tasks before activating) are companions to `POST /api/plan` — see AGENTS.md → Planning + Strategy Agent. None of them insert rows: `steer`, `revision`, and `rebase` update the existing plan in place, and `replace-task` is stateless (it reads `weekly_plans` by `plan_id` for schedule context, but the client applies the confirmed replacement via `PATCH /api/plan`).
 
 ---
 
@@ -256,6 +257,7 @@ All child rows are deleted when a mountain is deleted (ON DELETE CASCADE).
 | POST | `/api/plan/strategies` | — | weekly_plans, mountains, memory |
 | POST | `/api/plan/fill-time` | — | weekly_plans, mountains |
 | POST | `/api/plan/replace-task` | — | mountains, weekly_plans |
+| POST | `/api/plan/rebase` | weekly_plans (rescues expired tasks if any, sets status active + activated_from) | mountains, weekly_plans |
 | POST | `/api/track-progress` | progress_logs, mountains | mountains, progress_logs |
 | GET | `/api/track-progress` | — | progress_logs |
 | POST | `/api/reflect` | reflections, memory | mountains, reflections, progress_logs, memory |

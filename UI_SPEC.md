@@ -319,7 +319,9 @@ Design (green expedition-map style, data-driven route on a fixed canvas):
 
 ### `PlanView`
 
-Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to generate a week. Header is plain text (no card, no icon tile): "Weekly Plan" h2 — or "Your first week" / "Your next week" + amber "DRAFT" badge, see **Draft state** below — plus a "Week of …" subtitle with prev/next navigation arrows, and a "Generate Plan" button at right only when the viewed week has no plan yet.
+Weekly plan display for the Overview page. Reads from `GET /api/plan`, can trigger `POST /api/plan` to generate a week. Header is plain text (no card, no icon tile): "Weekly Plan" h2 — or "Your first week" / "Your next week" + amber "DRAFT" badge, see **Draft state** below — plus a "This week" / "Week of …" subtitle with prev/next navigation arrows, and a "Generate Plan" button at right only when the viewed week has no plan yet.
+
+**The week label and arrows always render** once a week is resolved — including on a mountain with *no plans at all*. They are not gated on `plans.length`: "Generate Plan" and the setup form both target the **viewed** week, so hiding the label would leave the user generating into a week they can't see or choose. Arrow enablement does the constraining instead: with no plans `minWeekStart` is the current week, so **Previous** is disabled there (a past week can't be planned) while **Next** stays available for planning ahead — and once paged forward, Previous re-enables so nobody gets stranded on a future week.
 
 Section order: "Week in Review" card (latest auto-reflection summary + up to 3 lessons, only when < 10 days old) → "What changed from last week" card (drafts only) → pending-revision review card *or* the quick-action steering row → freed-time suggestion banner (when applicable) → "Priority This Week" card → day-by-day schedule (no difficulty chip) → "Start this week" bar (drafts only). (Next best action and strategy notes are returned by the API but not displayed.)
 

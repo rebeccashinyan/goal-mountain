@@ -266,7 +266,10 @@ export default function PlanView({
     a > b ? a : b
   );
   const maxNavigableWeekStart = addDays(frontierWeekStart, 7);
-  const canGoPrev = !!viewedWeekStart && plans.length > 0 && viewedWeekStart > minWeekStart;
+  // No `plans.length` condition here: with zero plans minWeekStart is this
+  // week, which already disables going further back. Gating on it as well
+  // would strand someone who paged forward to plan an empty future week.
+  const canGoPrev = !!viewedWeekStart && viewedWeekStart > minWeekStart;
   const canGoNext = !!viewedWeekStart && viewedWeekStart < maxNavigableWeekStart;
 
   const fetchPlan = useCallback(async () => {
@@ -880,7 +883,10 @@ export default function PlanView({
               </span>
             )}
           </h2>
-          {plans.length > 0 && viewedWeekStart && (
+          {/* Always shown once a week is resolved, even with no plans yet:
+              "Generate Plan" targets the viewed week, so hiding the label
+              would leave the user generating into an unnamed week. */}
+          {viewedWeekStart && (
             <div className="mt-1 flex items-center gap-1">
               <button
                 type="button"

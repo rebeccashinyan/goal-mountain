@@ -131,13 +131,18 @@ export default function PlanView({
   const [reflection, setReflection] = useState<ReflectionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [availableTime, setAvailableTime] = useState("");
-  const [constraints, setConstraints] = useState("");
-  // "Change plan setup" — reopens the generation form over an existing
-  // draft. The draft itself is untouched while this is open; a new one only
-  // replaces it once generation actually succeeds.
-  const [setupOpen, setSetupOpen] = useState(false);
-  const [setupError, setSetupError] = useState(false);
+  // Plan setup state — the first-plan form, and "Change plan setup" over an
+  // existing draft. Every field is stamped with the week it belongs to:
+  // availability and constraints differ week to week, so an answer typed
+  // for one week must never appear pre-filled on another. Anything whose
+  // `week` doesn't match the viewed week is simply not this week's state.
+  const [setupState, setSetupState] = useState<{
+    week: string;
+    open: boolean;
+    availableTime: string;
+    constraints: string;
+    error: boolean;
+  } | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [finishingDay, setFinishingDay] = useState<string | null>(null);
@@ -214,6 +219,34 @@ export default function PlanView({
   const isWeekInFuture = !!viewedWeekStart && viewedWeekStart > todayWeekStart;
   const isDraft = !!plan && planStatus(plan.plan) === "draft";
   const hasOpenDay = plan?.plan.schedule?.some((d) => !d.finished) ?? false;
+
+  // Setup state only counts for the week it was entered against. Otherwise
+  // fall back to what THIS week's plan was actually generated with, so each
+  // week shows its own availability rather than the last one typed anywhere.
+  const activeSetup = setupState?.week === viewedWeekStart ? setupState : null;
+  const setupOpen = activeSetup?.open ?? false;
+  const setupError = activeSetup?.error ?? false;
+  const availableTime = activeSetup?.availableTime ?? plan?.plan.setup?.available_time ?? "";
+  const constraints = activeSetup?.constraints ?? plan?.plan.setup?.user_constraints ?? "";
+
+  // Writes always re-stamp the current week, so editing a field on a week
+  // that had no setup state yet starts a fresh entry for that week.
+  function patchSetup(patch: Partial<{ open: boolean; availableTime: string; constraints: string; error: boolean }>) {
+    if (!viewedWeekStart) return;
+    setSetupState((prev) => {
+      const base =
+        prev?.week === viewedWeekStart
+          ? prev
+          : {
+              week: viewedWeekStart,
+              open: false,
+              availableTime: plan?.plan.setup?.available_time ?? "",
+              constraints: plan?.plan.setup?.user_constraints ?? "",
+              error: false,
+            };
+      return { ...base, ...patch };
+    });
+  }
   const revision = plan?.plan.pending_revision ?? null;
   const totalDiffCount = revision
     ? revision.diff.removed.length +
@@ -272,12 +305,13 @@ export default function PlanView({
   // any Edit/Replace/Remove work in it) they already had.
   async function generatePlan() {
     if (generating || !viewedWeekStart) return;
+    const targetWeek = viewedWeekStart;
     setGenerating(true);
-    setSetupError(false);
+    patchSetup({ error: false });
 
     const body: Record<string, string> = {
       mountain_id: mountainId,
-      week_start: viewedWeekStart,
+      week_start: targetWeek,
     };
     if (availableTime.trim()) body.available_time = availableTime.trim();
     if (constraints.trim()) body.user_constraints = constraints.trim();
@@ -296,25 +330,30 @@ export default function PlanView({
         // Newest row for the week wins (effectivePlans), so this replaces
         // the old draft in the view only now that it exists.
         setPlans((prev) => [data, ...prev]);
-        setSetupOpen(false);
+        // Drop this week's local entry so the form re-derives from what the
+        // plan was actually saved with.
+        setSetupState((prev) => (prev?.week === targetWeek ? null : prev));
         if (isCurrentCalendarWeek) fetchReflection();
       } else {
-        setSetupError(true);
+        patchSetup({ error: true });
       }
     } catch {
-      setSetupError(true);
+      patchSetup({ error: true });
     } finally {
       setGenerating(false);
     }
   }
 
-  // Pre-fills from what the user actually told the Planning Agent for this
-  // week, so reopening setup is a revision of their answers, not a retype.
+  // Opens the form for the viewed week. Values derive from that week's own
+  // saved setup, so this is a revision of their answers, not a retype — and
+  // never carries another week's availability in.
   function openSetup() {
-    setAvailableTime(plan?.plan.setup?.available_time ?? "");
-    setConstraints(plan?.plan.setup?.user_constraints ?? "");
-    setSetupError(false);
-    setSetupOpen(true);
+    patchSetup({
+      open: true,
+      error: false,
+      availableTime: plan?.plan.setup?.available_time ?? "",
+      constraints: plan?.plan.setup?.user_constraints ?? "",
+    });
   }
 
   // Discards the whole draft week — deliberately kept out of the footer and
@@ -331,7 +370,7 @@ export default function PlanView({
         setPlans((prev) =>
           prev.filter((p) => !(p.week_start === plan.week_start && planStatus(p.plan) === "draft"))
         );
-        setSetupOpen(false);
+        setSetupState((prev) => (prev?.week === plan.week_start ? null : prev));
         setDiscardOpen(false);
         setMoreOpen(false);
       }
@@ -934,7 +973,7 @@ export default function PlanView({
             <input
               type="text"
               value={availableTime}
-              onChange={(e) => setAvailableTime(e.target.value)}
+              onChange={(e) => patchSetup({ availableTime: e.target.value })}
               placeholder="e.g. 5 hours, weekday evenings + Saturday morning"
               className={inputClasses}
             />
@@ -946,7 +985,7 @@ export default function PlanView({
             <input
               type="text"
               value={constraints}
-              onChange={(e) => setConstraints(e.target.value)}
+              onChange={(e) => patchSetup({ constraints: e.target.value })}
               placeholder="e.g. Feeling sore, busy on Wednesday"
               className={inputClasses}
             />
@@ -977,7 +1016,7 @@ export default function PlanView({
             {setupOpen && (
               <button
                 type="button"
-                onClick={() => setSetupOpen(false)}
+                onClick={() => patchSetup({ open: false })}
                 disabled={generating}
                 className="text-sm font-medium text-stone-500 hover:text-forest-700 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 transition-colors duration-200"
               >

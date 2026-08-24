@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { diffAffectedDayCount, type PlanDiff } from "@/lib/plans";
 
 export interface DailyReviewContext {
   kind: "daily_review";
@@ -30,6 +31,10 @@ interface ChatMessage {
   // low-risk change the guide applied directly, without needing to go find
   // it in the plan itself.
   undo?: { planId: string; previousPlan: unknown };
+  // Set on a "proposed changes — not applied yet" bubble. Mutually exclusive
+  // with `undo`: a message is either still a pending decision (this) or
+  // already done (`undo` present, or a plain confirmation with neither).
+  proposal?: { planId: string; diff?: PlanDiff; resolving?: boolean };
 }
 
 const loadFeelText = (feel?: string) =>
@@ -148,12 +153,19 @@ export default function MiniGuideChat({
       note?: string;
     }[];
   }) {
+    const hasUpdateAction = (data.actions || []).some(
+      (a) => a.type === "update_weekly_plan" && Array.isArray(a.operations) && a.operations.length
+    );
     const needsGuide = (data.actions || []).some((a) => a.type === "advance_milestone");
     setMessages((prev) => [...prev, {
       id: `ai-${Date.now()}`,
       role: "ai",
       content: data.reply,
-      suggested_replies: data.suggested_replies || [],
+      // The model wrote its own suggested replies before the backend decided
+      // apply vs. preview — a chip like "Looks good — apply changes" can
+      // flatly contradict what actually happens next. The follow-up card
+      // below carries the real next step instead.
+      suggested_replies: hasUpdateAction ? [] : data.suggested_replies || [],
       needsGuide,
     }]);
 
@@ -167,10 +179,12 @@ export default function MiniGuideChat({
     if (planAction) regeneratePlan(planAction.user_constraints, planAction.available_time);
   }
 
-  // The guide proposed (or applied) SPECIFIC task-level changes. Low-risk,
-  // explicit edits land immediately on the backend and are confirmed here
-  // with an undo path; anything ambiguous or larger comes back as a
-  // pending_revision the existing schedule card already knows how to show.
+  // Runs the guide's SPECIFIC task-level edit. The backend — not the
+  // model's own claim — decides whether it was safe to apply directly, so
+  // this only ever renders the actual outcome, and the two outcomes are
+  // mutually exclusive: either it's already done ("✓ Draft updated" + Undo)
+  // or it's waiting on a decision ("Proposed changes" + Apply/Keep
+  // discussing), never both at once.
   async function applyWeeklyPlanUpdate(action: {
     plan_id?: string;
     intent?: string;
@@ -209,15 +223,11 @@ export default function MiniGuideChat({
       onPlanUpdated?.();
 
       if (data.mode === "applied") {
-        const days = new Set<string>();
-        (data.diff?.added || []).forEach((c: { day: string }) => days.add(c.day));
-        (data.diff?.removed || []).forEach((c: { day: string }) => days.add(c.day));
-        (data.diff?.moved || []).forEach((c: { from: string; to: string }) => { days.add(c.from); days.add(c.to); });
-        (data.diff?.retimed || []).forEach((c: { day: string }) => days.add(c.day));
+        const days = diffAffectedDayCount(data.diff);
         setMessages((prev) => [...prev, {
           id: `note-${Date.now()}`,
           role: "ai",
-          content: `✓ Draft updated — ${days.size} day${days.size === 1 ? "" : "s"} affected.`,
+          content: `✓ Draft updated — ${days} day${days === 1 ? "" : "s"} affected.`,
           suggested_replies: [],
           note: true,
           undo: { planId: targetPlanId, previousPlan: data.previous_plan },
@@ -226,9 +236,10 @@ export default function MiniGuideChat({
         setMessages((prev) => [...prev, {
           id: `note-${Date.now()}`,
           role: "ai",
-          content: "I've drafted the changes — review them on the schedule and choose Apply changes or Keep current plan.",
+          content: data.note || "Proposed changes to your plan.",
           suggested_replies: [],
           note: true,
+          proposal: { planId: targetPlanId, diff: data.diff },
         }]);
       } else {
         setMessages((prev) => [...prev, {
@@ -250,6 +261,53 @@ export default function MiniGuideChat({
     } finally {
       setSending(false);
     }
+  }
+
+  // "Apply changes" on a proposal bubble — resolves the same pending
+  // revision through the normal /api/plan/revision endpoint. A pre-apply
+  // snapshot is captured first so this path can offer Undo too, same as a
+  // direct low-risk apply.
+  async function applyProposalInChat(msgId: string, planId: string, diff?: PlanDiff) {
+    setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, proposal: { ...m.proposal!, resolving: true } } : m)));
+    try {
+      const rows = await fetch(`/api/plan?mountain_id=${mountainId}`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+      const previousPlan = (rows as { id: string; plan: unknown }[]).find((r) => r.id === planId)?.plan;
+
+      const res = await fetch("/api/plan/revision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: planId, decision: "apply" }),
+      });
+      if (!res.ok) {
+        setMessages((prev) => [
+          ...prev.map((m) => (m.id === msgId ? { ...m, proposal: undefined } : m)),
+          { id: `note-${Date.now()}`, role: "ai", content: "Couldn't apply those changes — try again in a moment.", suggested_replies: [], note: true },
+        ]);
+        return;
+      }
+      onPlanUpdated?.();
+      const days = diff ? diffAffectedDayCount(diff) : undefined;
+      setMessages((prev) => [
+        ...prev.map((m) => (m.id === msgId ? { ...m, proposal: undefined } : m)),
+        {
+          id: `note-${Date.now()}`,
+          role: "ai",
+          content: `✓ Draft updated${days !== undefined ? ` — ${days} day${days === 1 ? "" : "s"} affected` : ""}.`,
+          suggested_replies: [],
+          note: true,
+          undo: { planId, previousPlan },
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [...prev, { id: `note-${Date.now()}`, role: "ai", content: "Couldn't apply those changes — try again in a moment.", suggested_replies: [], note: true }]);
+    }
+  }
+
+  // "Keep discussing" — leaves the pending revision exactly as it is (still
+  // resolvable later from the plan page's own Apply/Keep current plan card)
+  // and just dismisses this bubble's now-stale decision point.
+  function dismissProposal(msgId: string) {
+    setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, proposal: undefined } : m)));
   }
 
   async function undoWeeklyPlanUpdate(msgId: string, planId: string, previousPlan: unknown) {
@@ -431,6 +489,60 @@ export default function MiniGuideChat({
                 >
                   Undo
                 </button>
+              </div>
+            )}
+            {/* Proposed changes — nothing has been applied yet. Mutually
+                exclusive with `undo` above: a bubble is either still a
+                pending decision (this) or already done. */}
+            {m.proposal && (
+              <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Not applied yet</p>
+                {m.proposal.diff && (m.proposal.diff.added.length + m.proposal.diff.removed.length + m.proposal.diff.moved.length + m.proposal.diff.retimed.length) > 0 && (
+                  <ul className="mt-1.5 space-y-1">
+                    {m.proposal.diff.removed.slice(0, 2).map((c, i) => (
+                      <li key={`r${i}`} className="flex gap-1 text-[11px] text-stone-600">
+                        <span className="shrink-0 font-semibold text-summit">− {c.day}:</span>
+                        <span className="truncate">{c.task}</span>
+                      </li>
+                    ))}
+                    {m.proposal.diff.added.slice(0, 2).map((c, i) => (
+                      <li key={`a${i}`} className="flex gap-1 text-[11px] text-stone-600">
+                        <span className="shrink-0 font-semibold text-forest-700">+ {c.day}:</span>
+                        <span className="truncate">{c.task}</span>
+                      </li>
+                    ))}
+                    {m.proposal.diff.moved.slice(0, 2).map((c, i) => (
+                      <li key={`m${i}`} className="flex gap-1 text-[11px] text-stone-600">
+                        <span className="shrink-0 font-semibold text-amber-700">→</span>
+                        <span className="truncate">{c.task} ({c.from} → {c.to})</span>
+                      </li>
+                    ))}
+                    {m.proposal.diff.retimed.slice(0, 2).map((c, i) => (
+                      <li key={`t${i}`} className="flex gap-1 text-[11px] text-stone-600">
+                        <span className="shrink-0 font-semibold text-amber-700">◷</span>
+                        <span className="truncate">{c.task} ({c.from} → {c.to})</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={m.proposal.resolving}
+                    onClick={() => applyProposalInChat(m.id, m.proposal!.planId, m.proposal!.diff)}
+                    className="rounded-lg bg-forest-700 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                  >
+                    {m.proposal.resolving ? "Applying…" : "Apply changes"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={m.proposal.resolving}
+                    onClick={() => dismissProposal(m.id)}
+                    className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-40 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                  >
+                    Keep discussing
+                  </button>
+                </div>
               </div>
             )}
             {m.suggested_replies.length > 0 && (

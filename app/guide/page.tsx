@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { diffAffectedDayCount, type PlanDiff } from "@/lib/plans";
 
 interface GuideChat {
   id: string;
@@ -37,12 +38,26 @@ interface PlanProposal {
   confirmed: boolean;
 }
 
-interface WeeklyPlanUpdateResult {
-  mode: "applied" | "revision" | "unchanged" | "error" | "historical";
-  message: string;
+// One card, two mutually exclusive states — never both a "propose" and a
+// "done" CTA at once:
+// - "proposal": nothing has changed yet. Shows the diff plus Apply changes /
+//   Keep discussing. Only reachable when the backend genuinely couldn't
+//   apply directly (ambiguous, large, or the user was exploring a
+//   hypothetical) — never a case the model itself decided.
+// - "updated": the backend already wrote the change. Shows ✓ Draft updated
+//   plus View updated plan / Undo (Undo only when a pre-change snapshot is
+//   actually available — never a button that can't do anything).
+// "neutral" is a reload-only fallback for an OLDER message whose proposal
+// has since been superseded by a later one — nothing to act on, so it only
+// ever states the fact, never claims success or asks for confirmation.
+interface PlanUpdateCard {
+  status: "proposal" | "updated" | "neutral" | "error";
   planId?: string;
+  message: string;
+  diff?: PlanDiff;
   previousPlan?: unknown;
   undone?: boolean;
+  resolving?: boolean;
 }
 
 interface MountainOption {
@@ -65,7 +80,7 @@ function GuideContent() {
   const [search, setSearch] = useState("");
   const [executingAction, setExecutingAction] = useState(false);
   const [planProposals, setPlanProposals] = useState<Record<string, PlanProposal>>({});
-  const [planUpdates, setPlanUpdates] = useState<Record<string, WeeklyPlanUpdateResult>>({});
+  const [planUpdates, setPlanUpdates] = useState<Record<string, PlanUpdateCard>>({});
   const [selectedMountainId, setSelectedMountainId] = useState<string | null>(paramMountainId);
   const [showAllProactive, setShowAllProactive] = useState(false);
 
@@ -122,6 +137,59 @@ function GuideContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // A structured plan edit already ran (or was proposed) server-side the
+  // moment it was sent — it doesn't wait for this chat to stay open.
+  // Reloading a conversation (switching chats, refreshing the page) must
+  // never make that look like nothing happened, but it also can't just
+  // replay the model's original suggested_replies — those were written
+  // before the backend decided apply vs. preview, so they can flatly
+  // contradict what actually happened (the exact bug this card replaces).
+  // Only the MOST RECENT message touching a given plan can still be a real,
+  // actionable proposal (a plan holds at most one pending_revision, and a
+  // later proposal always supersedes an earlier one) — so that one gets a
+  // live-checked, fully working card; anything earlier gets a neutral,
+  // non-committal note.
+  async function reconstructPlanUpdateCards(msgs: GuideMessage[]) {
+    const updateMsgs = msgs
+      .map((m) => ({ m, action: (m.actions || []).find((a) => (a as { type?: string })?.type === "update_weekly_plan") }))
+      .filter((x): x is { m: GuideMessage; action: Record<string, unknown> } => !!x.action);
+    if (!updateMsgs.length) return;
+
+    const latestByPlan = new Map<string, GuideMessage>();
+    for (const { m, action } of updateMsgs) {
+      const planId = action.plan_id as string | undefined;
+      if (!planId) continue;
+      const existing = latestByPlan.get(planId);
+      if (!existing || new Date(m.created_at) > new Date(existing.created_at)) latestByPlan.set(planId, m);
+    }
+
+    const cards: Record<string, PlanUpdateCard> = {};
+    for (const { m } of updateMsgs) {
+      cards[m.id] = { status: "neutral", message: "This message proposed a plan change." };
+    }
+
+    const chatId = msgs[0]?.chat_id;
+    const mountainId = selectedMountainId || chats.find((c) => c.id === chatId)?.mountain_id;
+    const planRows = mountainId
+      ? await fetch(`/api/plan?mountain_id=${mountainId}`).then((r) => (r.ok ? r.json() : [])).catch(() => [])
+      : [];
+
+    for (const [planId, msg] of latestByPlan) {
+      const row = (planRows as { id: string; plan: { pending_revision?: { note?: string; diff?: PlanDiff } } }[])
+        .find((r) => r.id === planId);
+      cards[msg.id] = row?.plan?.pending_revision
+        ? {
+            status: "proposal",
+            planId,
+            message: row.plan.pending_revision.note || "Proposed changes to your plan.",
+            diff: row.plan.pending_revision.diff,
+          }
+        : { status: "updated", planId, message: "✓ Draft updated." };
+    }
+
+    setPlanUpdates(cards);
+  }
+
   async function loadChat(chatId: string) {
     setSelectedChatId(chatId);
     setMessagesLoading(true);
@@ -132,27 +200,7 @@ function GuideContent() {
     if (res.ok) {
       const data: GuideMessage[] = await res.json();
       setMessages(data);
-
-      // A structured plan edit already ran server-side the moment it was
-      // sent — it doesn't wait for this chat to stay open. Reloading this
-      // conversation (switching chats, refreshing the page) must not make
-      // that look like it never happened: reconstruct a neutral marker for
-      // every message that carried the action, from the action itself
-      // (never re-call the endpoint — the tasks it targeted may already be
-      // gone, and re-running it would just fail or double-apply).
-      const historicalUpdates: Record<string, WeeklyPlanUpdateResult> = {};
-      for (const msg of data) {
-        const hadUpdate = (msg.actions || []).some(
-          (a) => (a as { type?: string })?.type === "update_weekly_plan"
-        );
-        if (hadUpdate) {
-          historicalUpdates[msg.id] = {
-            mode: "historical",
-            message: "This message proposed a plan change — open the plan to see where things stand now.",
-          };
-        }
-      }
-      if (Object.keys(historicalUpdates).length) setPlanUpdates(historicalUpdates);
+      await reconstructPlanUpdateCards(data);
     }
 
     // Mark as read
@@ -268,10 +316,11 @@ function GuideContent() {
     sendMessage("Looks good, let's go with this plan.");
   }
 
-  // Applies (or previews) a structured task-level plan edit the guide
-  // proposed. The backend, not the model's own claim, decides whether it
-  // was safe to apply directly — this only ever renders what actually
-  // happened after that call returns.
+  // Runs the structured task-level edit the guide proposed. The backend —
+  // not the model's own claim — decides whether it was safe to apply
+  // directly; this only ever renders the ACTUAL outcome of that call, and
+  // the two outcomes are mutually exclusive: either it's already done
+  // ("updated") or it's waiting on a decision ("proposal"), never both.
   async function applyWeeklyPlanUpdate(
     msgId: string,
     action: { plan_id?: string; intent?: string; operations: unknown[]; note?: string }
@@ -294,44 +343,96 @@ function GuideContent() {
         const err = await res.json().catch(() => ({}));
         setPlanUpdates((prev) => ({
           ...prev,
-          [msgId]: { mode: "error", message: err.details?.[0] || err.error || "Couldn't apply that change." },
+          [msgId]: { status: "error", message: err.details?.[0] || err.error || "Couldn't apply that change." },
         }));
         return;
       }
 
       const data = await res.json();
       if (data.mode === "applied") {
-        const days = new Set<string>();
-        (data.diff?.added || []).forEach((c: { day: string }) => days.add(c.day));
-        (data.diff?.removed || []).forEach((c: { day: string }) => days.add(c.day));
-        (data.diff?.moved || []).forEach((c: { from: string; to: string }) => { days.add(c.from); days.add(c.to); });
-        (data.diff?.retimed || []).forEach((c: { day: string }) => days.add(c.day));
+        const days = diffAffectedDayCount(data.diff);
         setPlanUpdates((prev) => ({
           ...prev,
           [msgId]: {
-            mode: "applied",
-            message: `✓ Draft updated — ${days.size} day${days.size === 1 ? "" : "s"} affected.`,
+            status: "updated",
             planId: action.plan_id,
+            message: `✓ Draft updated — ${days} day${days === 1 ? "" : "s"} affected.`,
             previousPlan: data.previous_plan,
           },
         }));
       } else if (data.mode === "revision") {
         setPlanUpdates((prev) => ({
           ...prev,
-          [msgId]: { mode: "revision", message: "I've drafted the changes — review them on your plan page." },
+          [msgId]: {
+            status: "proposal",
+            planId: action.plan_id,
+            message: data.note || "Proposed changes to your plan.",
+            diff: data.diff,
+          },
         }));
       } else {
         setPlanUpdates((prev) => ({
           ...prev,
-          [msgId]: { mode: "unchanged", message: data.note || "Your plan already matches that — nothing changed." },
+          [msgId]: { status: "updated", planId: action.plan_id, message: data.note || "Your plan already matches that — nothing changed." },
         }));
       }
     } catch {
       setPlanUpdates((prev) => ({
         ...prev,
-        [msgId]: { mode: "error", message: "Couldn't reach the plan just now — try again in a moment." },
+        [msgId]: { status: "error", message: "Couldn't reach the plan just now — try again in a moment." },
       }));
     }
+  }
+
+  // "Apply changes" on a proposal card — resolves the SAME pending_revision
+  // /api/plan/steer or the guide already created, through the normal
+  // /api/plan/revision endpoint (no new mutation path). A pre-apply snapshot
+  // is captured first purely so this path can offer Undo too, on the same
+  // terms as a direct low-risk apply.
+  async function applyProposalInChat(msgId: string) {
+    const card = planUpdates[msgId];
+    if (!card?.planId || card.resolving || !selectedMountainId) return;
+    setPlanUpdates((prev) => ({ ...prev, [msgId]: { ...prev[msgId], resolving: true } }));
+    try {
+      const rows = await fetch(`/api/plan?mountain_id=${selectedMountainId}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => []);
+      const previousPlan = (rows as { id: string; plan: unknown }[]).find((r) => r.id === card.planId)?.plan;
+
+      const res = await fetch("/api/plan/revision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: card.planId, decision: "apply" }),
+      });
+      if (!res.ok) {
+        setPlanUpdates((prev) => ({ ...prev, [msgId]: { status: "error", message: "Couldn't apply those changes — try again in a moment." } }));
+        return;
+      }
+      const days = card.diff ? diffAffectedDayCount(card.diff) : undefined;
+      setPlanUpdates((prev) => ({
+        ...prev,
+        [msgId]: {
+          status: "updated",
+          planId: card.planId,
+          message: `✓ Draft updated${days !== undefined ? ` — ${days} day${days === 1 ? "" : "s"} affected` : ""}.`,
+          previousPlan,
+        },
+      }));
+    } catch {
+      setPlanUpdates((prev) => ({ ...prev, [msgId]: { status: "error", message: "Couldn't apply those changes — try again in a moment." } }));
+    }
+  }
+
+  // "Keep discussing" — the user isn't deciding right now. The pending
+  // revision itself is left exactly as-is (still resolvable later from the
+  // plan page's own Apply/Keep current plan card); this only dismisses the
+  // transient chat card so it stops presenting a stale decision point.
+  function dismissProposal(msgId: string) {
+    setPlanUpdates((prev) => {
+      const next = { ...prev };
+      delete next[msgId];
+      return next;
+    });
   }
 
   async function undoWeeklyPlanUpdate(msgId: string) {
@@ -715,55 +816,126 @@ function GuideContent() {
                       </div>
                     )}
 
-                    {/* Structured weekly-plan edit — applied, previewed, or (on
-                        a reloaded conversation) a neutral marker that this
-                        message already did something, even though the live
-                        confirmation state from that moment is gone. */}
-                    {msg.role === "ai" && planUpdates[msg.id] && (
-                      <div
-                        className={`max-w-[75%] flex items-center gap-3 rounded-xl border px-4 py-3 ${
-                          planUpdates[msg.id].mode === "error"
-                            ? "border-summit/30 bg-red-50"
-                            : planUpdates[msg.id].mode === "historical"
-                              ? "border-stone-200 bg-stone-50"
-                              : "border-forest-200 bg-forest-50"
-                        }`}
-                      >
-                        <div className="flex-1 min-w-0">
+                    {/* Structured weekly-plan edit — exactly one of two live
+                        states (never both a "propose" and a "done" CTA):
+                        "proposal" = nothing changed yet, Apply / Keep
+                        discussing; "updated" = already written, View plan /
+                        Undo. "neutral" only appears on a reloaded chat, for
+                        an older proposal a later one has since superseded. */}
+                    {msg.role === "ai" && planUpdates[msg.id] && (() => {
+                      const card = planUpdates[msg.id];
+                      const diffCount = card.diff
+                        ? card.diff.added.length + card.diff.removed.length + card.diff.moved.length + card.diff.retimed.length
+                        : 0;
+                      return (
+                        <div
+                          className={`max-w-[75%] w-full rounded-xl border px-4 py-3 ${
+                            card.status === "error"
+                              ? "border-summit/30 bg-red-50"
+                              : card.status === "neutral"
+                                ? "border-stone-200 bg-stone-50"
+                                : card.status === "proposal"
+                                  ? "border-amber-200 bg-amber-50/70"
+                                  : "border-forest-200 bg-forest-50"
+                          }`}
+                        >
                           <p className={`text-xs font-semibold ${
-                            planUpdates[msg.id].mode === "error"
+                            card.status === "error"
                               ? "text-summit"
-                              : planUpdates[msg.id].mode === "historical"
+                              : card.status === "neutral"
                                 ? "text-stone-500"
-                                : "text-forest-700"
+                                : card.status === "proposal"
+                                  ? "text-amber-800"
+                                  : "text-forest-700"
                           }`}>
-                            {planUpdates[msg.id].undone ? "Undone — your draft is back to how it was." : planUpdates[msg.id].message}
+                            {card.status === "proposal" && <span className="uppercase tracking-wide text-[10px] block mb-1 text-amber-700">Not applied yet</span>}
+                            {card.undone ? "Undone — your draft is back to how it was." : card.message}
                           </p>
-                        </div>
-                        {planUpdates[msg.id].mode !== "error" && !planUpdates[msg.id].undone && selectedMountainId && (
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Link
-                              href={`/mountain?id=${selectedMountainId}`}
-                              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-forest-700 text-white hover:bg-forest-600 active:scale-[0.97] transition-colors duration-200"
-                            >
-                              View updated plan
-                            </Link>
-                            {planUpdates[msg.id].mode === "applied" && (
+
+                          {card.status === "proposal" && diffCount > 0 && (
+                            <ul className="mt-2 space-y-1">
+                              {card.diff!.removed.slice(0, 3).map((c, i) => (
+                                <li key={`r${i}`} className="flex gap-1.5 text-[11px] text-stone-600">
+                                  <span className="shrink-0 font-semibold text-summit">− Remove</span>
+                                  <span className="shrink-0 text-stone-400">{c.day}:</span>
+                                  <span className="truncate">{c.task}</span>
+                                </li>
+                              ))}
+                              {card.diff!.added.slice(0, 3).map((c, i) => (
+                                <li key={`a${i}`} className="flex gap-1.5 text-[11px] text-stone-600">
+                                  <span className="shrink-0 font-semibold text-forest-700">+ Add</span>
+                                  <span className="shrink-0 text-stone-400">{c.day}:</span>
+                                  <span className="truncate">{c.task}</span>
+                                </li>
+                              ))}
+                              {card.diff!.moved.slice(0, 3).map((c, i) => (
+                                <li key={`m${i}`} className="flex gap-1.5 text-[11px] text-stone-600">
+                                  <span className="shrink-0 font-semibold text-amber-700">→ Move</span>
+                                  <span className="truncate">{c.task}</span>
+                                  <span className="shrink-0 text-stone-400">({c.from} → {c.to})</span>
+                                </li>
+                              ))}
+                              {card.diff!.retimed.slice(0, 3).map((c, i) => (
+                                <li key={`t${i}`} className="flex gap-1.5 text-[11px] text-stone-600">
+                                  <span className="shrink-0 font-semibold text-amber-700">◷ Change</span>
+                                  <span className="truncate">{c.task}</span>
+                                  <span className="shrink-0 text-stone-400">({c.from} → {c.to})</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {card.status === "proposal" && (
+                            <div className="mt-3 flex gap-2">
                               <button
                                 type="button"
-                                onClick={() => undoWeeklyPlanUpdate(msg.id)}
-                                className="text-xs font-semibold px-2 py-1.5 text-stone-500 hover:text-summit active:scale-[0.97] transition-colors duration-200"
+                                disabled={card.resolving}
+                                onClick={() => applyProposalInChat(msg.id)}
+                                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-forest-700 text-white hover:bg-forest-600 disabled:opacity-40 active:scale-[0.97] transition-colors duration-200"
                               >
-                                Undo
+                                {card.resolving ? "Applying…" : "Apply changes"}
                               </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                              <button
+                                type="button"
+                                disabled={card.resolving}
+                                onClick={() => dismissProposal(msg.id)}
+                                className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-40 active:scale-[0.97] transition-colors duration-200"
+                              >
+                                Keep discussing
+                              </button>
+                            </div>
+                          )}
 
-                    {/* Suggested replies */}
-                    {msg.role === "ai" && msg.suggested_replies?.length > 0 && (
+                          {(card.status === "updated" || card.status === "neutral") && !card.undone && selectedMountainId && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <Link
+                                href={`/mountain?id=${selectedMountainId}`}
+                                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-forest-700 text-white hover:bg-forest-600 active:scale-[0.97] transition-colors duration-200"
+                              >
+                                View updated plan
+                              </Link>
+                              {card.status === "updated" && card.previousPlan !== undefined && (
+                                <button
+                                  type="button"
+                                  onClick={() => undoWeeklyPlanUpdate(msg.id)}
+                                  className="text-xs font-semibold px-2 py-1.5 text-stone-500 hover:text-summit active:scale-[0.97] transition-colors duration-200"
+                                >
+                                  Undo
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Suggested replies — suppressed once a plan-update card
+                        owns this message's next step, since the model wrote
+                        these before the backend decided apply vs. preview
+                        and they can flatly contradict the real outcome. A
+                        card in "updated" state gets exactly one deterministic
+                        next step instead. */}
+                    {msg.role === "ai" && !planUpdates[msg.id] && msg.suggested_replies?.length > 0 && (
                       <div className="flex flex-wrap gap-2 max-w-[75%]">
                         {msg.suggested_replies.map((reply, i) => (
                           <button key={i} type="button" onClick={() => sendMessage(reply)} disabled={sending}
@@ -772,6 +944,15 @@ function GuideContent() {
                             {reply}
                           </button>
                         ))}
+                      </div>
+                    )}
+                    {msg.role === "ai" && planUpdates[msg.id]?.status === "updated" && !planUpdates[msg.id]?.resolving && (
+                      <div className="flex flex-wrap gap-2 max-w-[75%]">
+                        <button type="button" onClick={() => { setInput(""); inputRef.current?.focus(); }}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-full border border-forest-200 bg-white text-forest-700 hover:bg-forest-50 hover:border-forest-300 active:scale-[0.97] transition-colors duration-200"
+                          style={{ boxShadow: "0 1px 3px rgba(20,60,35,0.06)" }}>
+                          Make another adjustment
+                        </button>
                       </div>
                     )}
                   </div>

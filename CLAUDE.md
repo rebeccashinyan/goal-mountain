@@ -118,7 +118,7 @@ Updated in CLAUDE.md
 ## Change Summary
 - After completing any change, end the reply with one line in this format:
   **Change:** <a few words describing what changed>
-- Keep it under ~10 words, plain language, no file paths or code details.
+- Keep it under ~10 words, in English, plain language, no file paths or code details.
 - Example: **Change:** removed eyebrow label from Planning Agent card
 
 

@@ -38,7 +38,7 @@ interface PlanProposal {
 }
 
 interface WeeklyPlanUpdateResult {
-  mode: "applied" | "revision" | "unchanged" | "error";
+  mode: "applied" | "revision" | "unchanged" | "error" | "historical";
   message: string;
   planId?: string;
   previousPlan?: unknown;
@@ -132,6 +132,27 @@ function GuideContent() {
     if (res.ok) {
       const data: GuideMessage[] = await res.json();
       setMessages(data);
+
+      // A structured plan edit already ran server-side the moment it was
+      // sent — it doesn't wait for this chat to stay open. Reloading this
+      // conversation (switching chats, refreshing the page) must not make
+      // that look like it never happened: reconstruct a neutral marker for
+      // every message that carried the action, from the action itself
+      // (never re-call the endpoint — the tasks it targeted may already be
+      // gone, and re-running it would just fail or double-apply).
+      const historicalUpdates: Record<string, WeeklyPlanUpdateResult> = {};
+      for (const msg of data) {
+        const hadUpdate = (msg.actions || []).some(
+          (a) => (a as { type?: string })?.type === "update_weekly_plan"
+        );
+        if (hadUpdate) {
+          historicalUpdates[msg.id] = {
+            mode: "historical",
+            message: "This message proposed a plan change — open the plan to see where things stand now.",
+          };
+        }
+      }
+      if (Object.keys(historicalUpdates).length) setPlanUpdates(historicalUpdates);
     }
 
     // Mark as read
@@ -694,17 +715,28 @@ function GuideContent() {
                       </div>
                     )}
 
-                    {/* Structured weekly-plan edit — applied directly or previewed */}
+                    {/* Structured weekly-plan edit — applied, previewed, or (on
+                        a reloaded conversation) a neutral marker that this
+                        message already did something, even though the live
+                        confirmation state from that moment is gone. */}
                     {msg.role === "ai" && planUpdates[msg.id] && (
                       <div
                         className={`max-w-[75%] flex items-center gap-3 rounded-xl border px-4 py-3 ${
                           planUpdates[msg.id].mode === "error"
                             ? "border-summit/30 bg-red-50"
-                            : "border-forest-200 bg-forest-50"
+                            : planUpdates[msg.id].mode === "historical"
+                              ? "border-stone-200 bg-stone-50"
+                              : "border-forest-200 bg-forest-50"
                         }`}
                       >
                         <div className="flex-1 min-w-0">
-                          <p className={`text-xs font-semibold ${planUpdates[msg.id].mode === "error" ? "text-summit" : "text-forest-700"}`}>
+                          <p className={`text-xs font-semibold ${
+                            planUpdates[msg.id].mode === "error"
+                              ? "text-summit"
+                              : planUpdates[msg.id].mode === "historical"
+                                ? "text-stone-500"
+                                : "text-forest-700"
+                          }`}>
                             {planUpdates[msg.id].undone ? "Undone — your draft is back to how it was." : planUpdates[msg.id].message}
                           </p>
                         </div>

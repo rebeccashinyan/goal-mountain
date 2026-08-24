@@ -209,7 +209,7 @@ Called after a mountain exists. Used by the Overview page and Planning Agent.
 
 ## 4. Planning + Strategy Agent
 
-**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `DELETE /api/plan`, `POST /api/plan/steer`, `POST /api/plan/revision`, `POST /api/plan/replace-task`, `POST /api/plan/rebase`
+**Route:** `POST /api/plan`, `GET /api/plan`, `PATCH /api/plan`, `DELETE /api/plan`, `POST /api/plan/steer`, `POST /api/plan/revision`, `POST /api/plan/update`, `POST /api/plan/replace-task`, `POST /api/plan/rebase`
 
 **Purpose:** Generates an adaptive weekly schedule. Accounts for past performance, user constraints, and behavioral patterns from memory.
 
@@ -335,6 +335,41 @@ It then **always proposes, never applies** — draft or active alike. It compute
 
 **DB reads:** `weekly_plans` (the plan being steered), `mountains`, `memory`  
 **DB writes:** `weekly_plans`, `memory` (preference)
+
+**Structured task-level edits — `POST /api/plan/update`:** the counterpart to `/api/plan/steer` for a request scoped to one or a few *specific* tasks ("move Thursday's task to Friday", "add a 20-minute task Monday") rather than a whole-open-days rewrite. The Guide Agent's `update_weekly_plan` action (see Guide Agent below) is the only caller.
+
+**Input:**
+```json
+{
+  "plan_id": "uuid",
+  "mountain_id": "uuid",
+  "intent": "apply | preview",
+  "operations": [
+    { "op": "add", "day": "Thursday", "task": "...", "duration": "20 min", "priority": "medium" },
+    { "op": "remove", "day": "Monday", "task": "<exact existing task text>" },
+    { "op": "move", "day": "Thursday", "task": "<exact existing task text>", "to_day": "Friday" },
+    { "op": "update", "day": "Monday", "task": "<exact existing task text>", "duration": "30 min", "priority": "high" },
+    { "op": "replace", "day": "Monday", "task": "<exact existing task text>", "new_task": "...", "duration": "30 min" }
+  ],
+  "note": "optional one-sentence summary"
+}
+```
+
+**Behavior:** every operation is validated against the plan's *current* schedule before anything is written — never model-trusted, the same lesson this project applies everywhere else a model was asked to hold a hard rule on its own (mid-week generation's day filter, rebase's expired-day filter, Replace's duration lock). `applyPlanOperations()` in `lib/plans.ts` does this deterministically:
+- every op's `day`/`task` must exactly match (or a trimmed, case-insensitive match of) an existing task on that day — a day marked `finished` can never be edited, and a day absent from `schedule` (no tasks yet) is still a valid "add" target
+- `add`/`update`/`replace`/`move` reject an invalid or unreasonable duration (0 or >4h), and reject creating a duplicate of a task that already exists on the target day
+- a day whose total after applying every op would exceed 8h is flagged (`overCapacityDays`) — not a hard rejection, but it disqualifies the request from applying directly (below)
+
+If **any** operation fails validation, the whole request 400s with the specific problems and **nothing is written** — no partial application, so the caller is never left half-changed.
+
+On success, a diff is computed with the same `diffSchedules()` used by `/api/plan/steer` (now diffing priority as well as duration and day, so a priority-only "update" still shows up). Two outcomes:
+- **Low risk → applies immediately:** when `intent: "apply"`, every referenced task matched unambiguously, no day is over capacity, the request touches ≤2 days and ≤4 operations, and the plan has no other revision already pending — the new schedule is written straight to `plan.schedule`. Returns `mode: "applied"` plus the diff and `previous_plan` (the pre-change snapshot, used for one-click undo via a plain `PATCH /api/plan`).
+- **Otherwise → previewed:** anything ambiguous, larger, over capacity, marked `intent: "preview"`, or landing on a plan that already has a pending revision is written to `plan.pending_revision` in the **exact same shape** `/api/plan/steer` already produces — so the existing revision card (Apply changes / Keep current plan) on the plan page renders it with no changes needed on that side. Resolved the same way, through `POST /api/plan/revision`.
+
+This split is what lets the Guide Agent apply a small, explicit, in-context edit ("move it to Friday") with the same low-friction, undo-backed immediacy as inline Edit/Replace/Remove, while anything bigger or uncertain still gets the "see it before it lands" treatment every other AI-driven plan rewrite gets.
+
+**DB reads:** `weekly_plans` (the plan being edited)  
+**DB writes:** `weekly_plans`
 
 **Strategy options — `POST /api/plan/strategies`:** `{ plan_id, mountain_id }` → `{ strategies: [{ label, detail }] }`, 2-3 of them. Backs the **Change strategy** chip: rather than re-rolling the week and hoping, it names concrete directions the user can recognise — "Begin outreach and offer testing", "Focus on 2 polished portfolio pieces" — each grounded in the tasks actually in this plan, each meaningfully different from the others and from what the plan already does. Picking one calls `/steer` with `action: "strategy"`; "Something else…" hands off to Discuss with AI. Read-only (reads `weekly_plans`, `mountains`, `memory`; writes nothing).
 
@@ -532,7 +567,8 @@ Triggered server-side by `POST /api/plan` at week rollover: before generating, t
 
 **Single Mountain mode** (chat has `mountain_id`):
 - Loads full mountain data, current plan, latest reflection, recent logs, memories
-- All 4 action types available
+- All 5 action types available
+- "Current plan" here means the **effective plan for the relevant week** (draft or active — via `effectivePlans()`, not `activeHistory()`), because a draft the user hasn't started yet is exactly what "adjust this week's plan" usually refers to, and coaching against a plan the guide can't even see was the root cause of a real bug (the guide would describe a new plan in prose instead of ever touching the actual draft). The exact schedule — including which tasks exist, verbatim — is included in the system prompt so `update_weekly_plan` operations can reference real task text. The mini plan-talk chat (`MiniGuideChat`, opened from "Something else…" under Change strategy, or from a daily check-in) passes an explicit `plan_id` with every message, since it always knows exactly which week is on screen; without one, the route falls back to the effective plan for the current calendar week, then the most recently touched plan.
 
 **Output:**
 ```json
@@ -550,21 +586,25 @@ Triggered server-side by `POST /api/plan` at week rollover: before generating, t
 | `store_memory` | Server-side (silent) | User reveals insight about motivation, obstacle, or behavior |
 | `log_progress` | Server-side (silent) | User describes what they did or missed |
 | `advance_milestone` | Client-side (requires confirm) | User explicitly says they completed the current stage |
-| `propose_plan` | Client-side (fetches plan, shows card) | User wants to adjust their schedule or pace |
+| `propose_plan` | Client-side (fetches plan, shows card) | No plan exists yet for the relevant week, or the user wants an entirely new plan from scratch |
+| `update_weekly_plan` | Client-side (calls `/api/plan/update`) | User wants to add, remove, move, retime, reprioritize, or replace SPECIFIC task(s) in the current plan shown in context |
 
 **Server-side actions** (`store_memory`, `log_progress`) are executed inside the messages route before returning — no round-trip needed. Memories written with `source: "guide"` in metadata.
 
 **Client-side actions** are returned in the `actions` array:
 - `advance_milestone` → returns `nextMilestoneName`, rendered as green confirmation card; on confirm calls `PATCH /api/mountains/[id]`
 - `propose_plan` → returns `user_constraints` and `available_time`; frontend calls `POST /api/plan`, renders plan card; "Looks good ✓" confirms, "Make changes" pre-fills input
+- `update_weekly_plan` → returns `operations`, `intent`, `note`, and a server-resolved `plan_id` (the model never names one itself, so it can't get it wrong). The frontend calls `POST /api/plan/update` immediately — no extra click — and only *then* renders the outcome: a deterministic "✓ Draft updated — N days affected" confirmation with **View updated plan** / **Undo** when the backend applied it directly, or "I've drafted the changes — review them on the schedule" when it came back as a pending revision instead. The model's own `reply` text is instructed never to claim the change already happened (no "Updated!", no "Done!") — only this code-generated message, appended after the backend call actually succeeds, ever says so. This is deliberate: a model can be told a rule like this and still not hold it (the same lesson as the mountain-chat question budget and the mid-week day filter), so the confirmation the user sees is never the model's own claim.
 
 **Proactive message conditions** (`POST /api/proactive`):
 - `daysSinceLastLog >= 3` OR `missedCount >= 2` (in last 14 logs) OR `recentActivityCount == 0` (this week)
 - Deduped: only one proactive chat created per mountain per day
 - Creates a `guide_chats` row (type: `ai_proactive`, unread: true) + initial AI message
 
-**DB reads:** `mountains`, `memory`, `weekly_plans`, `reflections`, `progress_logs`, `guide_chats`, `guide_messages`  
+**DB reads:** `mountains`, `memory`, `weekly_plans` (effective — draft or active), `reflections`, `progress_logs`, `guide_chats`, `guide_messages`  
 **DB writes:** `guide_chats`, `guide_messages`, `memory` (store_memory), `progress_logs` (log_progress)
+
+*(`update_weekly_plan`'s actual `weekly_plans` write happens in `/api/plan/update`, called separately by the frontend — same pattern as `propose_plan`'s write happening in `/api/plan`, not listed as a direct write of this route.)*
 
 **Navigation flows:**
 - Dashboard → AI Guide tab → All Mountains mode (no mountain_id)
@@ -617,7 +657,7 @@ Triggered server-side by `POST /api/plan` at week rollover: before generating, t
 | Progress Tracking | mountains, progress_logs | progress_logs, mountains |
 | Reflection | mountains, reflections, progress_logs, memory, weekly_plans (latest active, auto mode) | reflections, memory |
 | Memory | — | memory |
-| Guide | mountains, memory, weekly_plans (active only), reflections, progress_logs, guide_chats, guide_messages | guide_chats, guide_messages, memory, progress_logs |
+| Guide | mountains, memory, weekly_plans (effective — draft or active), reflections, progress_logs, guide_chats, guide_messages | guide_chats, guide_messages, memory, progress_logs |
 | Proactive | mountains, progress_logs, weekly_plans (active only) | guide_chats, guide_messages |
 | Strategic Intelligence | mountains, memory, reflections, progress_logs | — |
 

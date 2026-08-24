@@ -26,6 +26,10 @@ interface ChatMessage {
   suggested_replies: string[];
   needsGuide?: boolean;
   note?: boolean;
+  // Set on the "✓ Draft updated" confirmation bubble — lets the user undo a
+  // low-risk change the guide applied directly, without needing to go find
+  // it in the plan itself.
+  undo?: { planId: string; previousPlan: unknown };
 }
 
 const loadFeelText = (feel?: string) =>
@@ -97,7 +101,7 @@ export default function MiniGuideChat({
             : `Daily check-in for ${context.day}. The user completed every task: ${context.completed.join("; ")}. ${loadFeelText(context.load_feel)} Congratulate them briefly, then ask ONE light question: which task ran longer than planned? Keep it short and celebratory — they had a good day. Store what they say as a memory for future plan sizing.`;
         } else {
           content = "I'd like to adjust this week's plan.";
-          initial_context = `The user wants to discuss and adjust their weekly plan. Current plan: ${context.summary}. Ask what they'd like to change — pacing, which days, task load, or focus — one question at a time. Once you understand what they want, use the propose_plan action with their constraints to regenerate the plan. Keep it conversational and brief.`;
+          initial_context = `The user wants to discuss and adjust their weekly plan. Current plan: ${context.summary}. Ask what they'd like to change — pacing, which days, task load, or focus — one question at a time. Once you understand a SPECIFIC change (a task to add/remove/move/retime/replace), use the update_weekly_plan action against the current plan schedule you've been given. Only fall back to propose_plan if they want an entirely different plan from scratch. Keep it conversational and brief.`;
         }
 
         setMessages([{ id: "u0", role: "user", content, suggested_replies: [] }]);
@@ -106,7 +110,11 @@ export default function MiniGuideChat({
         const res = await fetch(`/api/chats/${chat.id}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content, initial_context }),
+          body: JSON.stringify({
+            content,
+            initial_context,
+            plan_id: context.kind === "plan_talk" ? context.planId : undefined,
+          }),
           signal: abortRef.current.signal,
         });
         if (!res.ok) throw new Error();
@@ -130,7 +138,15 @@ export default function MiniGuideChat({
   function appendAiReply(data: {
     reply: string;
     suggested_replies?: string[];
-    actions?: { type?: string; user_constraints?: string; available_time?: string }[];
+    actions?: {
+      type?: string;
+      user_constraints?: string;
+      available_time?: string;
+      plan_id?: string;
+      intent?: string;
+      operations?: unknown[];
+      note?: string;
+    }[];
   }) {
     const needsGuide = (data.actions || []).some((a) => a.type === "advance_milestone");
     setMessages((prev) => [...prev, {
@@ -141,8 +157,116 @@ export default function MiniGuideChat({
       needsGuide,
     }]);
 
+    const updateAction = (data.actions || []).find((a) => a.type === "update_weekly_plan");
+    if (updateAction && Array.isArray(updateAction.operations) && updateAction.operations.length) {
+      applyWeeklyPlanUpdate(updateAction as { plan_id: string; intent?: string; operations: unknown[]; note?: string });
+      return;
+    }
+
     const planAction = (data.actions || []).find((a) => a.type === "propose_plan");
     if (planAction) regeneratePlan(planAction.user_constraints, planAction.available_time);
+  }
+
+  // The guide proposed (or applied) SPECIFIC task-level changes. Low-risk,
+  // explicit edits land immediately on the backend and are confirmed here
+  // with an undo path; anything ambiguous or larger comes back as a
+  // pending_revision the existing schedule card already knows how to show.
+  async function applyWeeklyPlanUpdate(action: {
+    plan_id?: string;
+    intent?: string;
+    operations: unknown[];
+    note?: string;
+  }) {
+    if (context.kind !== "plan_talk") return;
+    const targetPlanId = action.plan_id || context.planId;
+    setSending(true);
+    try {
+      const res = await fetch("/api/plan/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan_id: targetPlanId,
+          mountain_id: mountainId,
+          operations: action.operations,
+          intent: action.intent,
+          note: action.note,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setMessages((prev) => [...prev, {
+          id: `note-${Date.now()}`,
+          role: "ai",
+          content: `I couldn't make that change — ${err.details?.[0] || err.error || "something didn't check out"}. Nothing was changed.`,
+          suggested_replies: [],
+          note: true,
+        }]);
+        return;
+      }
+
+      const data = await res.json();
+      onPlanUpdated?.();
+
+      if (data.mode === "applied") {
+        const days = new Set<string>();
+        (data.diff?.added || []).forEach((c: { day: string }) => days.add(c.day));
+        (data.diff?.removed || []).forEach((c: { day: string }) => days.add(c.day));
+        (data.diff?.moved || []).forEach((c: { from: string; to: string }) => { days.add(c.from); days.add(c.to); });
+        (data.diff?.retimed || []).forEach((c: { day: string }) => days.add(c.day));
+        setMessages((prev) => [...prev, {
+          id: `note-${Date.now()}`,
+          role: "ai",
+          content: `✓ Draft updated — ${days.size} day${days.size === 1 ? "" : "s"} affected.`,
+          suggested_replies: [],
+          note: true,
+          undo: { planId: targetPlanId, previousPlan: data.previous_plan },
+        }]);
+      } else if (data.mode === "revision") {
+        setMessages((prev) => [...prev, {
+          id: `note-${Date.now()}`,
+          role: "ai",
+          content: "I've drafted the changes — review them on the schedule and choose Apply changes or Keep current plan.",
+          suggested_replies: [],
+          note: true,
+        }]);
+      } else {
+        setMessages((prev) => [...prev, {
+          id: `note-${Date.now()}`,
+          role: "ai",
+          content: data.note || "Your plan already matches that — I didn't change anything.",
+          suggested_replies: [],
+          note: true,
+        }]);
+      }
+    } catch {
+      setMessages((prev) => [...prev, {
+        id: `note-${Date.now()}`,
+        role: "ai",
+        content: "I couldn't update the plan just now — try again in a moment.",
+        suggested_replies: [],
+        note: true,
+      }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function undoWeeklyPlanUpdate(msgId: string, planId: string, previousPlan: unknown) {
+    try {
+      await fetch("/api/plan", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: planId, plan: previousPlan }),
+      });
+      onPlanUpdated?.();
+      setMessages((prev) => [
+        ...prev.map((m) => (m.id === msgId ? { ...m, undo: undefined } : m)),
+        { id: `undo-${Date.now()}`, role: "ai", content: "Undone — your draft is back to how it was.", suggested_replies: [], note: true },
+      ]);
+    } catch {
+      setMessages((prev) => [...prev, { id: `undo-err-${Date.now()}`, role: "ai", content: "Couldn't undo that — try again in a moment.", suggested_replies: [], note: true }]);
+    }
   }
 
   // The guide proposed a plan change. This goes through the same steering
@@ -204,7 +328,10 @@ export default function MiniGuideChat({
       const res = await fetch(`/api/chats/${chatId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({
+          content,
+          plan_id: context.kind === "plan_talk" ? context.planId : undefined,
+        }),
         signal: abortRef.current.signal,
       });
       if (res.ok) appendAiReply(await res.json());
@@ -287,6 +414,24 @@ export default function MiniGuideChat({
               >
                 Your guide has a proposal — review it in the AI Guide →
               </button>
+            )}
+            {m.undo && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg border border-forest-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-forest-800 hover:bg-forest-50 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                >
+                  View updated plan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => undoWeeklyPlanUpdate(m.id, m.undo!.planId, m.undo!.previousPlan)}
+                  className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-stone-500 hover:text-summit hover:bg-red-50 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-forest-500 transition-colors duration-200"
+                >
+                  Undo
+                </button>
+              </div>
             )}
             {m.suggested_replies.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">

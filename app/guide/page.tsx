@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 interface GuideChat {
   id: string;
@@ -36,6 +37,14 @@ interface PlanProposal {
   confirmed: boolean;
 }
 
+interface WeeklyPlanUpdateResult {
+  mode: "applied" | "revision" | "unchanged" | "error";
+  message: string;
+  planId?: string;
+  previousPlan?: unknown;
+  undone?: boolean;
+}
+
 interface MountainOption {
   id: string;
   goal: string;
@@ -56,6 +65,7 @@ function GuideContent() {
   const [search, setSearch] = useState("");
   const [executingAction, setExecutingAction] = useState(false);
   const [planProposals, setPlanProposals] = useState<Record<string, PlanProposal>>({});
+  const [planUpdates, setPlanUpdates] = useState<Record<string, WeeklyPlanUpdateResult>>({});
   const [selectedMountainId, setSelectedMountainId] = useState<string | null>(paramMountainId);
   const [showAllProactive, setShowAllProactive] = useState(false);
 
@@ -116,6 +126,7 @@ function GuideContent() {
     setSelectedChatId(chatId);
     setMessagesLoading(true);
     setPlanProposals({});
+    setPlanUpdates({});
 
     const res = await fetch(`/api/chats/${chatId}/messages`);
     if (res.ok) {
@@ -146,6 +157,7 @@ function GuideContent() {
       setMessages([]);
       setSelectedChatId(chat.id);
       setPlanProposals({});
+      setPlanUpdates({});
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }
@@ -182,15 +194,27 @@ function GuideContent() {
           {
             id: aiMsgId, chat_id: selectedChatId, role: "ai", content: data.reply,
             suggested_replies: data.suggested_replies || [],
-            actions: (data.actions || []).filter((a: Record<string, unknown>) => a.type !== "propose_plan"),
+            actions: (data.actions || []).filter(
+              (a: Record<string, unknown>) => a.type !== "propose_plan" && a.type !== "update_weekly_plan"
+            ),
             created_at: new Date().toISOString(),
           },
         ]);
 
-        // Handle plan proposal
-        const planAction = (data.actions || []).find((a: Record<string, unknown>) => a.type === "propose_plan");
-        if (planAction && selectedMountainId) {
-          fetchPlanProposal(aiMsgId, planAction.user_constraints as string, planAction.available_time as string);
+        // Handle a structured, task-level plan edit — explicit + low-risk
+        // applies immediately (with undo); anything larger or ambiguous
+        // comes back as a reviewable revision instead.
+        const updateAction = (data.actions || []).find((a: Record<string, unknown>) => a.type === "update_weekly_plan");
+        if (updateAction && Array.isArray(updateAction.operations) && updateAction.operations.length && selectedMountainId) {
+          applyWeeklyPlanUpdate(aiMsgId, updateAction as {
+            plan_id?: string; intent?: string; operations: unknown[]; note?: string;
+          });
+        } else {
+          // Handle a full-plan proposal (only when no structured edit fired)
+          const planAction = (data.actions || []).find((a: Record<string, unknown>) => a.type === "propose_plan");
+          if (planAction && selectedMountainId) {
+            fetchPlanProposal(aiMsgId, planAction.user_constraints as string, planAction.available_time as string);
+          }
         }
 
         // Refresh chat list to update last_message
@@ -221,6 +245,87 @@ function GuideContent() {
   function confirmPlan(msgId: string) {
     setPlanProposals((prev) => ({ ...prev, [msgId]: { ...prev[msgId], confirmed: true } }));
     sendMessage("Looks good, let's go with this plan.");
+  }
+
+  // Applies (or previews) a structured task-level plan edit the guide
+  // proposed. The backend, not the model's own claim, decides whether it
+  // was safe to apply directly — this only ever renders what actually
+  // happened after that call returns.
+  async function applyWeeklyPlanUpdate(
+    msgId: string,
+    action: { plan_id?: string; intent?: string; operations: unknown[]; note?: string }
+  ) {
+    if (!selectedMountainId || !action.plan_id) return;
+    try {
+      const res = await fetch("/api/plan/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan_id: action.plan_id,
+          mountain_id: selectedMountainId,
+          operations: action.operations,
+          intent: action.intent,
+          note: action.note,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setPlanUpdates((prev) => ({
+          ...prev,
+          [msgId]: { mode: "error", message: err.details?.[0] || err.error || "Couldn't apply that change." },
+        }));
+        return;
+      }
+
+      const data = await res.json();
+      if (data.mode === "applied") {
+        const days = new Set<string>();
+        (data.diff?.added || []).forEach((c: { day: string }) => days.add(c.day));
+        (data.diff?.removed || []).forEach((c: { day: string }) => days.add(c.day));
+        (data.diff?.moved || []).forEach((c: { from: string; to: string }) => { days.add(c.from); days.add(c.to); });
+        (data.diff?.retimed || []).forEach((c: { day: string }) => days.add(c.day));
+        setPlanUpdates((prev) => ({
+          ...prev,
+          [msgId]: {
+            mode: "applied",
+            message: `✓ Draft updated — ${days.size} day${days.size === 1 ? "" : "s"} affected.`,
+            planId: action.plan_id,
+            previousPlan: data.previous_plan,
+          },
+        }));
+      } else if (data.mode === "revision") {
+        setPlanUpdates((prev) => ({
+          ...prev,
+          [msgId]: { mode: "revision", message: "I've drafted the changes — review them on your plan page." },
+        }));
+      } else {
+        setPlanUpdates((prev) => ({
+          ...prev,
+          [msgId]: { mode: "unchanged", message: data.note || "Your plan already matches that — nothing changed." },
+        }));
+      }
+    } catch {
+      setPlanUpdates((prev) => ({
+        ...prev,
+        [msgId]: { mode: "error", message: "Couldn't reach the plan just now — try again in a moment." },
+      }));
+    }
+  }
+
+  async function undoWeeklyPlanUpdate(msgId: string) {
+    const update = planUpdates[msgId];
+    if (!update?.planId) return;
+    try {
+      await fetch("/api/plan", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: update.planId, plan: update.previousPlan }),
+      });
+      setPlanUpdates((prev) => ({ ...prev, [msgId]: { ...prev[msgId], undone: true } }));
+    } catch {
+      // best-effort — leave the confirmation card as-is on failure
+    }
   }
 
   async function executeAdvanceMilestone(msgId: string, nextName: string) {
@@ -584,6 +689,42 @@ function GuideContent() {
                                 Make changes
                               </button>
                             </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Structured weekly-plan edit — applied directly or previewed */}
+                    {msg.role === "ai" && planUpdates[msg.id] && (
+                      <div
+                        className={`max-w-[75%] flex items-center gap-3 rounded-xl border px-4 py-3 ${
+                          planUpdates[msg.id].mode === "error"
+                            ? "border-summit/30 bg-red-50"
+                            : "border-forest-200 bg-forest-50"
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold ${planUpdates[msg.id].mode === "error" ? "text-summit" : "text-forest-700"}`}>
+                            {planUpdates[msg.id].undone ? "Undone — your draft is back to how it was." : planUpdates[msg.id].message}
+                          </p>
+                        </div>
+                        {planUpdates[msg.id].mode !== "error" && !planUpdates[msg.id].undone && selectedMountainId && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Link
+                              href={`/mountain?id=${selectedMountainId}`}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-forest-700 text-white hover:bg-forest-600 active:scale-[0.97] transition-colors duration-200"
+                            >
+                              View updated plan
+                            </Link>
+                            {planUpdates[msg.id].mode === "applied" && (
+                              <button
+                                type="button"
+                                onClick={() => undoWeeklyPlanUpdate(msg.id)}
+                                className="text-xs font-semibold px-2 py-1.5 text-stone-500 hover:text-summit active:scale-[0.97] transition-colors duration-200"
+                              >
+                                Undo
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>

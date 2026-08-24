@@ -1,6 +1,6 @@
 import { openai } from "@/lib/openai";
 import { supabase } from "@/lib/supabase";
-import { activeHistory, type PlanRow } from "@/lib/plans";
+import { effectivePlans, isoMondayOf, type PlanRow } from "@/lib/plans";
 
 export async function GET(
   _request: Request,
@@ -22,7 +22,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: chat_id } = await params;
-  const { content, initial_context } = await request.json();
+  const { content, initial_context, plan_id } = await request.json();
 
   if (!content) return Response.json({ error: "content is required" }, { status: 400 });
 
@@ -60,6 +60,9 @@ export async function POST(
   let systemContext = "";
   let milestones: { name: string; completed: boolean }[] = [];
   let currentMilestoneIndex = 0;
+  // The plan the update_weekly_plan action would target — resolved once so
+  // both the prompt and the returned action agree on which row it is.
+  let contextPlan: PlanRow | null = null;
 
   if (isAllMountains) {
     const { data: mountains } = await supabase
@@ -97,8 +100,17 @@ Known patterns: ${allMemories?.map((m) => m.content).join("; ") || "None yet"}`;
         supabase.from("progress_logs").select("log_type, data, created_at").eq("mountain_id", mountain_id).order("created_at", { ascending: false }).limit(10),
       ]);
 
-    // The plan the user actually started, not an unreviewed draft.
-    const recentPlan = activeHistory((planRows || []) as PlanRow[], 1);
+    // The plan being discussed — a draft the user hasn't started counts too,
+    // since that's exactly what "adjust this week's plan" usually means.
+    // An explicit plan_id (the mini plan-talk chat always has one, since it
+    // opens from a specific week on screen) wins over guessing "this week".
+    const allPlanRows = (planRows || []) as PlanRow[];
+    const effective = effectivePlans(allPlanRows);
+    contextPlan =
+      (plan_id ? allPlanRows.find((p) => p.id === plan_id) : null) ||
+      effective.find((p) => p.week_start === isoMondayOf(new Date())) ||
+      effective[0] ||
+      null;
 
     const currentMilestone = mountain.milestones[mountain.current_milestone_index];
     const nextMilestone = mountain.milestones[mountain.current_milestone_index + 1];
@@ -111,7 +123,8 @@ Context: ${mountain.goal}
 - Next stage: ${nextMilestone?.name || "Summit"}
 - Target date: ${mountain.race_date || "Not set"}
 - Milestones: ${mountain.milestones.filter((m: { completed: boolean }) => m.completed).length} / ${mountain.milestones.length} completed
-${recentPlan?.[0] ? `\nCurrent plan: Priority: ${recentPlan[0].priority_recommendation} | Next: ${recentPlan[0].next_best_action}` : ""}
+${contextPlan ? `\nCurrent plan (${contextPlan.plan?.status === "draft" ? "DRAFT — not started yet" : "active"}, week of ${contextPlan.week_start}): Priority: ${contextPlan.priority_recommendation} | Next: ${contextPlan.next_best_action}
+Current plan schedule (use EXACT task text from here in any update_weekly_plan operation — day "finished: true" is locked and cannot be edited): ${JSON.stringify(contextPlan.plan?.schedule || [])}` : "\nNo weekly plan exists yet for this mountain."}
 ${recentReflection?.[0] ? `\nLatest reflection: ${recentReflection[0].summary}` : ""}
 Recent activity: ${JSON.stringify(recentLogs?.map((l) => ({ type: l.log_type, date: l.created_at })) || [])}
 User patterns: ${memories?.map((m: { category: string; content: string }) => `[${m.category}] ${m.content}`).join("\n") || "None yet"}`;
@@ -123,7 +136,14 @@ User patterns: ${memories?.map((m: { category: string; content: string }) => `[$
 - { "type": "store_memory", "category": "motivation|obstacle|behavior_pattern|preference", "content": "..." }
 - { "type": "advance_milestone" } — only when user explicitly confirms completing the current stage
 - { "type": "log_progress", "log_type": "activity|missed_activity", "description": "..." }
-- { "type": "propose_plan", "user_constraints": "...", "available_time": "..." } — when user wants to adjust their schedule`;
+- { "type": "propose_plan", "user_constraints": "...", "available_time": "..." } — ONLY when no plan exists yet for the relevant week, or the user explicitly wants an entirely new plan from scratch (a full reroll). If a current plan schedule is shown above, prefer update_weekly_plan instead.
+- { "type": "update_weekly_plan", "intent": "apply" | "preview", "operations": [ { "op": "add", "day": "Thursday", "task": "...", "duration": "20 min", "priority": "medium" } | { "op": "remove", "day": "Monday", "task": "<exact existing task text>" } | { "op": "move", "day": "Thursday", "task": "<exact existing task text>", "to_day": "Friday" } | { "op": "update", "day": "Monday", "task": "<exact existing task text>", "duration": "30 min", "priority": "high" } | { "op": "replace", "day": "Monday", "task": "<exact existing task text>", "new_task": "...", "duration": "30 min" } ], "note": "one short sentence describing the change" }
+  — use this whenever the user wants to add, remove, move, retime, reprioritize, or replace SPECIFIC task(s) in the current plan schedule shown above.
+  Rules for this action:
+  - Every operation's "task" (and "day") MUST be copied verbatim from the "Current plan schedule" above — never paraphrase, never invent a task that isn't listed, never target a day marked "finished": true.
+  - Only emit this once you have a concrete, complete set of operations to propose — not while you're still asking clarifying questions.
+  - "intent": "apply" ONLY when the user gave an explicit, unambiguous instruction to make the change now — e.g. "move it to Friday", "update the draft", "add a task Thursday for X", "yes, do that". Default to "intent": "preview" whenever the user is exploring a hypothetical ("what if...", "could I...", "how about...") or you are not fully certain which existing task(s) they mean — the app will show them a preview to confirm instead of changing anything blind.
+  - The app validates and applies (or previews) this after your reply — it will tell the user the outcome. Never say "Updated!" or "Done!" in your own reply for this action; phrase it as proposing/working on it (e.g. "Got it — updating your draft now." or "Here's what I'd change — take a look below.").`;
 
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
     {
@@ -203,11 +223,19 @@ Be warm, direct, specific. Reference real data. Keep replies concise (2–4 shor
 
   // Client actions
   const clientActions = actions
-    .filter((a) => a.type === "advance_milestone" || a.type === "propose_plan")
-    .map((a) => a.type === "advance_milestone"
-      ? { ...a, nextMilestoneName: milestones[currentMilestoneIndex + 1]?.name || "Summit" }
-      : a
-    );
+    .filter((a) => a.type === "advance_milestone" || a.type === "propose_plan" || a.type === "update_weekly_plan")
+    .map((a) => {
+      if (a.type === "advance_milestone") {
+        return { ...a, nextMilestoneName: milestones[currentMilestoneIndex + 1]?.name || "Summit" };
+      }
+      if (a.type === "update_weekly_plan") {
+        // Resolved server-side from context, not the model — the model never
+        // sees or names a plan_id, so it can't get it wrong.
+        return contextPlan ? { ...a, plan_id: contextPlan.id } : null;
+      }
+      return a;
+    })
+    .filter((a): a is Record<string, unknown> => a !== null);
 
   // Save AI message
   await supabase.from("guide_messages").insert({
